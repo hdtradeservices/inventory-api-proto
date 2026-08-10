@@ -1,0 +1,12 @@
+version: "3"
+services:
+  proto:
+    image: us.gcr.io/goodkarma-420/ci:go-protobuf
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      - HOME=/tmp
+      - GOPATH=/tmp/go
+      - PATH=/tmp/go/bin:/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    working_dir: /go/src/github.com/hdtradeservices/inventory-api-proto
+    volumes:
+      - .:/go/src/github.com/hdtradeservices/inventory-api-proto
