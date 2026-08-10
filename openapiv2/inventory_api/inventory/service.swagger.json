@@ -1,0 +1,298 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Inventory Integration API",
+    "version": "v2"
+  },
+  "tags": [
+    {
+      "name": "InventoryIntegrationService",
+      "description": "Report on-hand stock for the warehouses you hold, and see what Zentail currently believes."
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v2/inventory": {
+      "get": {
+        "summary": "ListInventory returns what Zentail currently believes about the SKUs\nstocked in the caller's warehouses.",
+        "description": "Two uses. It scopes a sweep — report only these SKUs rather than your whole\ncatalog. And it lets a caller send only genuine differences, which on a\nlarge catalog is the difference between a viable poll loop and a pointless\none.",
+        "operationId": "InventoryIntegrationService_ListInventory",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/inventory_apiListInventoryResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "updatedSince",
+            "description": "Optional: only SKUs whose Zentail-side quantity changed since this time.\nOmit for a full listing.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "cursor",
+            "description": "Leave empty for the first page; pass next_cursor thereafter.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "pageSize",
+            "description": "Server-capped. Omit for the default.",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "InventoryIntegrationService"
+        ]
+      },
+      "post": {
+        "summary": "UpdateInventory sets absolute on-hand quantities.",
+        "description": "Idempotent and order-insensitive: replaying a call changes nothing, and an\nupdate whose observed_ts predates what Zentail already holds is discarded\nand reported as stale rather than applied. A slow retry overtaking a newer\nreading cannot roll the count backwards.",
+        "operationId": "InventoryIntegrationService_UpdateInventory",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/inventory_apiUpdateInventoryResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/inventory_apiUpdateInventoryRequest"
+            }
+          }
+        ],
+        "tags": [
+          "InventoryIntegrationService"
+        ]
+      }
+    },
+    "/v2/inventory/status": {
+      "get": {
+        "summary": "IntegrationStatus returns diagnostic checks for the caller's integration —\nwhether warehouses are bound to it, when stock was last reported, and\nwhether Zentail considers that reading stale.",
+        "description": "An inventory integration fails quietly: nothing errors when a poll loop\nstops, the numbers simply age. This is how that surfaces.",
+        "operationId": "InventoryIntegrationService_IntegrationStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/inventory_apiIntegrationStatusResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "InventoryIntegrationService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "inventory_apiCheck": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/definitions/inventory_apiCheckState"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "inventory_apiCheckState": {
+      "type": "string",
+      "enum": [
+        "CHECK_STATE_UNSPECIFIED",
+        "CHECK_STATE_PASS",
+        "CHECK_STATE_WARN",
+        "CHECK_STATE_FAIL"
+      ],
+      "default": "CHECK_STATE_UNSPECIFIED"
+    },
+    "inventory_apiIntegrationStatusResponse": {
+      "type": "object",
+      "properties": {
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/inventory_apiCheck"
+          }
+        }
+      }
+    },
+    "inventory_apiInventoryItem": {
+      "type": "object",
+      "properties": {
+        "sku": {
+          "type": "string"
+        },
+        "warehouseUniqueId": {
+          "type": "string",
+          "description": "The caller's own identifier for the warehouse, not Zentail's internal id."
+        },
+        "quantity": {
+          "type": "integer",
+          "format": "int32",
+          "description": "What Zentail currently believes is on hand."
+        },
+        "lastUpdatedTs": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When that belief was last updated, by anyone."
+        }
+      }
+    },
+    "inventory_apiInventoryUpdate": {
+      "type": "object",
+      "properties": {
+        "sku": {
+          "type": "string"
+        },
+        "warehouseUniqueId": {
+          "type": "string"
+        },
+        "quantity": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Absolute on-hand, not a delta. What is physically there right now,\nexcluding anything already picked for an order."
+        },
+        "binLocation": {
+          "type": "string",
+          "description": "Optional free-text bin or slot, passed through for operator reference."
+        }
+      }
+    },
+    "inventory_apiInventoryUpdateResult": {
+      "type": "object",
+      "properties": {
+        "sku": {
+          "type": "string"
+        },
+        "warehouseUniqueId": {
+          "type": "string"
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "type": "string"
+        },
+        "stale": {
+          "type": "boolean",
+          "description": "True when the update was discarded because observed_ts predated the value\nZentail already held. Not an error: the newer reading stands. Treat as\nsuccess unless it is happening constantly, which means clock skew or a\nsecond writer."
+        }
+      },
+      "description": "InventoryUpdateResult echoes the full key of the update it answers. SKU alone\nis not enough — a batch may carry the same SKU for two warehouses."
+    },
+    "inventory_apiListInventoryResponse": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/inventory_apiInventoryItem"
+          }
+        },
+        "nextCursor": {
+          "type": "string",
+          "description": "Empty when the page is the last one."
+        }
+      }
+    },
+    "inventory_apiUpdateInventoryRequest": {
+      "type": "object",
+      "properties": {
+        "updates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/inventory_apiInventoryUpdate"
+          },
+          "description": "Server-capped per call. Exceeding the cap fails the request with the limit\nin the error rather than silently truncating."
+        },
+        "observedTs": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the caller observed these quantities — not when it sent them. Required:\nwithout it Zentail cannot tell a stale retry from a fresh reading, and\nordering is the whole basis of the idempotency guarantee."
+        }
+      }
+    },
+    "inventory_apiUpdateInventoryResponse": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/inventory_apiInventoryUpdateResult"
+          },
+          "description": "One entry per update. Order is not guaranteed, which is why each result\nechoes its full key."
+        }
+      }
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    }
+  }
+}
