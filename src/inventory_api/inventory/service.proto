@@ -1,0 +1,174 @@
+syntax = "proto3";
+package inventory_api;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+option go_package = "github.com/hdtradeservices/inventory-api-proto/go/inventory_api/inventory";
+
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  info : {
+    title : "Inventory Integration API";
+    version : "v2";
+  }
+};
+
+// InventoryIntegrationService is the contract a system holding physical stock —
+// a 3PL, a warehouse management system, or a storefront acting as a warehouse —
+// uses to keep Zentail's picture of that stock correct.
+//
+// Every call is scoped to the integration resolved from the API token, and
+// through it to the warehouses bound to that integration. No request carries a
+// warehouse id or a company id; supplying one would let a caller report stock
+// into warehouses that are not theirs.
+//
+// Reporting is **absolute and timestamped**, never a delta. A caller says "this
+// SKU is at this quantity, as observed at this time" and Zentail resolves
+// ordering. A lost, duplicated or out-of-order call therefore cannot drift the
+// count — which matters because these calls cross a network on a poll loop.
+//
+// Fulfillment is a separate contract. See shipping-api-proto if you also ship
+// orders on Zentail's behalf.
+service InventoryIntegrationService {
+  option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_tag) = {
+    name : "Inventory Integration Service",
+    description : "Report on-hand stock for the warehouses you hold, and see "
+                  "what Zentail currently believes."
+  };
+
+  // ListInventory returns what Zentail currently believes about the SKUs
+  // stocked in the caller's warehouses.
+  //
+  // Two uses. It scopes a sweep — report only these SKUs rather than your whole
+  // catalog. And it lets a caller send only genuine differences, which on a
+  // large catalog is the difference between a viable poll loop and a pointless
+  // one.
+  rpc ListInventory(ListInventoryRequest) returns (ListInventoryResponse) {
+    option (google.api.http) = {
+      get : "/v2/inventory"
+    };
+  }
+
+  // UpdateInventory sets absolute on-hand quantities.
+  //
+  // Idempotent and order-insensitive: replaying a call changes nothing, and an
+  // update whose observed_ts predates what Zentail already holds is discarded
+  // and reported as stale rather than applied. A slow retry overtaking a newer
+  // reading cannot roll the count backwards.
+  rpc UpdateInventory(UpdateInventoryRequest)
+      returns (UpdateInventoryResponse) {
+    option (google.api.http) = {
+      post : "/v2/inventory"
+      body : "*"
+    };
+  }
+
+  // IntegrationStatus returns diagnostic checks for the caller's integration —
+  // whether warehouses are bound to it, when stock was last reported, and
+  // whether Zentail considers that reading stale.
+  //
+  // An inventory integration fails quietly: nothing errors when a poll loop
+  // stops, the numbers simply age. This is how that surfaces.
+  rpc IntegrationStatus(IntegrationStatusRequest)
+      returns (IntegrationStatusResponse) {
+    option (google.api.http) = {
+      get : "/v2/inventory/status"
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Reading
+// ---------------------------------------------------------------------------
+
+message ListInventoryRequest {
+  // Optional: only SKUs whose Zentail-side quantity changed since this time.
+  // Omit for a full listing.
+  google.protobuf.Timestamp updated_since = 1;
+  // Leave empty for the first page; pass next_cursor thereafter.
+  string cursor = 2;
+  // Server-capped. Omit for the default.
+  int32 page_size = 3;
+}
+
+message ListInventoryResponse {
+  repeated InventoryItem items = 1;
+  // Empty when the page is the last one.
+  string next_cursor = 2;
+}
+
+message InventoryItem {
+  string sku = 1;
+  // The caller's own identifier for the warehouse, not Zentail's internal id.
+  string warehouse_unique_id = 2;
+  // What Zentail currently believes is on hand.
+  int32 quantity = 3;
+  // When that belief was last updated, by anyone.
+  google.protobuf.Timestamp last_updated_ts = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Writing
+// ---------------------------------------------------------------------------
+
+message UpdateInventoryRequest {
+  // Server-capped per call. Exceeding the cap fails the request with the limit
+  // in the error rather than silently truncating.
+  repeated InventoryUpdate updates = 1;
+  // When the caller observed these quantities — not when it sent them. Required:
+  // without it Zentail cannot tell a stale retry from a fresh reading, and
+  // ordering is the whole basis of the idempotency guarantee.
+  google.protobuf.Timestamp observed_ts = 2;
+}
+
+message InventoryUpdate {
+  string sku = 1;
+  string warehouse_unique_id = 2;
+  // Absolute on-hand, not a delta. What is physically there right now,
+  // excluding anything already picked for an order.
+  int32 quantity = 3;
+  // Optional free-text bin or slot, passed through for operator reference.
+  string bin_location = 4;
+}
+
+message UpdateInventoryResponse {
+  // One entry per update. Order is not guaranteed, which is why each result
+  // echoes its full key.
+  repeated InventoryUpdateResult results = 1;
+}
+
+// InventoryUpdateResult echoes the full key of the update it answers. SKU alone
+// is not enough — a batch may carry the same SKU for two warehouses.
+message InventoryUpdateResult {
+  string sku = 1;
+  string warehouse_unique_id = 2;
+  bool success = 3;
+  string error_message = 4;
+  // True when the update was discarded because observed_ts predated the value
+  // Zentail already held. Not an error: the newer reading stands. Treat as
+  // success unless it is happening constantly, which means clock skew or a
+  // second writer.
+  bool stale = 5;
+}
+
+// ---------------------------------------------------------------------------
+// Status
+// ---------------------------------------------------------------------------
+
+message IntegrationStatusRequest {}
+
+message IntegrationStatusResponse { repeated Check checks = 1; }
+
+message Check {
+  string name = 1;
+  CheckState state = 2;
+  string message = 3;
+}
+
+enum CheckState {
+  CHECK_STATE_UNSPECIFIED = 0;
+  CHECK_STATE_PASS = 1;
+  CHECK_STATE_WARN = 2;
+  CHECK_STATE_FAIL = 3;
+}

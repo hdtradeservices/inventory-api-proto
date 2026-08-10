@@ -1,0 +1,270 @@
+# Protocol Documentation
+<a name="top"></a>
+
+## Table of Contents
+
+- [inventory_api/inventory/service.proto](#inventory_api_inventory_service-proto)
+    - [Check](#inventory_api-Check)
+    - [IntegrationStatusRequest](#inventory_api-IntegrationStatusRequest)
+    - [IntegrationStatusResponse](#inventory_api-IntegrationStatusResponse)
+    - [InventoryItem](#inventory_api-InventoryItem)
+    - [InventoryUpdate](#inventory_api-InventoryUpdate)
+    - [InventoryUpdateResult](#inventory_api-InventoryUpdateResult)
+    - [ListInventoryRequest](#inventory_api-ListInventoryRequest)
+    - [ListInventoryResponse](#inventory_api-ListInventoryResponse)
+    - [UpdateInventoryRequest](#inventory_api-UpdateInventoryRequest)
+    - [UpdateInventoryResponse](#inventory_api-UpdateInventoryResponse)
+  
+    - [CheckState](#inventory_api-CheckState)
+  
+    - [InventoryIntegrationService](#inventory_api-InventoryIntegrationService)
+  
+- [Scalar Value Types](#scalar-value-types)
+
+
+
+<a name="inventory_api_inventory_service-proto"></a>
+<p align="right"><a href="#top">Top</a></p>
+
+## inventory_api/inventory/service.proto
+
+
+
+<a name="inventory_api-Check"></a>
+
+### Check
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| name | [string](#string) |  |  |
+| state | [CheckState](#inventory_api-CheckState) |  |  |
+| message | [string](#string) |  |  |
+
+
+
+
+
+
+<a name="inventory_api-IntegrationStatusRequest"></a>
+
+### IntegrationStatusRequest
+
+
+
+
+
+
+
+<a name="inventory_api-IntegrationStatusResponse"></a>
+
+### IntegrationStatusResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| checks | [Check](#inventory_api-Check) | repeated |  |
+
+
+
+
+
+
+<a name="inventory_api-InventoryItem"></a>
+
+### InventoryItem
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| sku | [string](#string) |  |  |
+| warehouse_unique_id | [string](#string) |  | The caller&#39;s own identifier for the warehouse, not Zentail&#39;s internal id. |
+| quantity | [int32](#int32) |  | What Zentail currently believes is on hand. |
+| last_updated_ts | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | When that belief was last updated, by anyone. |
+
+
+
+
+
+
+<a name="inventory_api-InventoryUpdate"></a>
+
+### InventoryUpdate
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| sku | [string](#string) |  |  |
+| warehouse_unique_id | [string](#string) |  |  |
+| quantity | [int32](#int32) |  | Absolute on-hand, not a delta. What is physically there right now, excluding anything already picked for an order. |
+| bin_location | [string](#string) |  | Optional free-text bin or slot, passed through for operator reference. |
+
+
+
+
+
+
+<a name="inventory_api-InventoryUpdateResult"></a>
+
+### InventoryUpdateResult
+InventoryUpdateResult echoes the full key of the update it answers. SKU alone
+is not enough — a batch may carry the same SKU for two warehouses.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| sku | [string](#string) |  |  |
+| warehouse_unique_id | [string](#string) |  |  |
+| success | [bool](#bool) |  |  |
+| error_message | [string](#string) |  |  |
+| stale | [bool](#bool) |  | True when the update was discarded because observed_ts predated the value Zentail already held. Not an error: the newer reading stands. Treat as success unless it is happening constantly, which means clock skew or a second writer. |
+
+
+
+
+
+
+<a name="inventory_api-ListInventoryRequest"></a>
+
+### ListInventoryRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| updated_since | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | Optional: only SKUs whose Zentail-side quantity changed since this time. Omit for a full listing. |
+| cursor | [string](#string) |  | Leave empty for the first page; pass next_cursor thereafter. |
+| page_size | [int32](#int32) |  | Server-capped. Omit for the default. |
+
+
+
+
+
+
+<a name="inventory_api-ListInventoryResponse"></a>
+
+### ListInventoryResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| items | [InventoryItem](#inventory_api-InventoryItem) | repeated |  |
+| next_cursor | [string](#string) |  | Empty when the page is the last one. |
+
+
+
+
+
+
+<a name="inventory_api-UpdateInventoryRequest"></a>
+
+### UpdateInventoryRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| updates | [InventoryUpdate](#inventory_api-InventoryUpdate) | repeated | Server-capped per call. Exceeding the cap fails the request with the limit in the error rather than silently truncating. |
+| observed_ts | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | When the caller observed these quantities — not when it sent them. Required: without it Zentail cannot tell a stale retry from a fresh reading, and ordering is the whole basis of the idempotency guarantee. |
+
+
+
+
+
+
+<a name="inventory_api-UpdateInventoryResponse"></a>
+
+### UpdateInventoryResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| results | [InventoryUpdateResult](#inventory_api-InventoryUpdateResult) | repeated | One entry per update. Order is not guaranteed, which is why each result echoes its full key. |
+
+
+
+
+
+ 
+
+
+<a name="inventory_api-CheckState"></a>
+
+### CheckState
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| CHECK_STATE_UNSPECIFIED | 0 |  |
+| CHECK_STATE_PASS | 1 |  |
+| CHECK_STATE_WARN | 2 |  |
+| CHECK_STATE_FAIL | 3 |  |
+
+
+ 
+
+ 
+
+
+<a name="inventory_api-InventoryIntegrationService"></a>
+
+### InventoryIntegrationService
+InventoryIntegrationService is the contract a system holding physical stock —
+a 3PL, a warehouse management system, or a storefront acting as a warehouse —
+uses to keep Zentail&#39;s picture of that stock correct.
+
+Every call is scoped to the integration resolved from the API token, and
+through it to the warehouses bound to that integration. No request carries a
+warehouse id or a company id; supplying one would let a caller report stock
+into warehouses that are not theirs.
+
+Reporting is **absolute and timestamped**, never a delta. A caller says &#34;this
+SKU is at this quantity, as observed at this time&#34; and Zentail resolves
+ordering. A lost, duplicated or out-of-order call therefore cannot drift the
+count — which matters because these calls cross a network on a poll loop.
+
+Fulfillment is a separate contract. See shipping-api-proto if you also ship
+orders on Zentail&#39;s behalf.
+
+| Method Name | Request Type | Response Type | Description |
+| ----------- | ------------ | ------------- | ------------|
+| ListInventory | [ListInventoryRequest](#inventory_api-ListInventoryRequest) | [ListInventoryResponse](#inventory_api-ListInventoryResponse) | ListInventory returns what Zentail currently believes about the SKUs stocked in the caller&#39;s warehouses.
+
+Two uses. It scopes a sweep — report only these SKUs rather than your whole catalog. And it lets a caller send only genuine differences, which on a large catalog is the difference between a viable poll loop and a pointless one. |
+| UpdateInventory | [UpdateInventoryRequest](#inventory_api-UpdateInventoryRequest) | [UpdateInventoryResponse](#inventory_api-UpdateInventoryResponse) | UpdateInventory sets absolute on-hand quantities.
+
+Idempotent and order-insensitive: replaying a call changes nothing, and an update whose observed_ts predates what Zentail already holds is discarded and reported as stale rather than applied. A slow retry overtaking a newer reading cannot roll the count backwards. |
+| IntegrationStatus | [IntegrationStatusRequest](#inventory_api-IntegrationStatusRequest) | [IntegrationStatusResponse](#inventory_api-IntegrationStatusResponse) | IntegrationStatus returns diagnostic checks for the caller&#39;s integration — whether warehouses are bound to it, when stock was last reported, and whether Zentail considers that reading stale.
+
+An inventory integration fails quietly: nothing errors when a poll loop stops, the numbers simply age. This is how that surfaces. |
+
+ 
+
+
+
+## Scalar Value Types
+
+| .proto Type | Notes | C++ | Java | Python | Go | C# | PHP | Ruby |
+| ----------- | ----- | --- | ---- | ------ | -- | -- | --- | ---- |
+| <a name="double" /> double |  | double | double | float | float64 | double | float | Float |
+| <a name="float" /> float |  | float | float | float | float32 | float | float | Float |
+| <a name="int32" /> int32 | Uses variable-length encoding. Inefficient for encoding negative numbers – if your field is likely to have negative values, use sint32 instead. | int32 | int | int | int32 | int | integer | Bignum or Fixnum (as required) |
+| <a name="int64" /> int64 | Uses variable-length encoding. Inefficient for encoding negative numbers – if your field is likely to have negative values, use sint64 instead. | int64 | long | int/long | int64 | long | integer/string | Bignum |
+| <a name="uint32" /> uint32 | Uses variable-length encoding. | uint32 | int | int/long | uint32 | uint | integer | Bignum or Fixnum (as required) |
+| <a name="uint64" /> uint64 | Uses variable-length encoding. | uint64 | long | int/long | uint64 | ulong | integer/string | Bignum or Fixnum (as required) |
+| <a name="sint32" /> sint32 | Uses variable-length encoding. Signed int value. These more efficiently encode negative numbers than regular int32s. | int32 | int | int | int32 | int | integer | Bignum or Fixnum (as required) |
+| <a name="sint64" /> sint64 | Uses variable-length encoding. Signed int value. These more efficiently encode negative numbers than regular int64s. | int64 | long | int/long | int64 | long | integer/string | Bignum |
+| <a name="fixed32" /> fixed32 | Always four bytes. More efficient than uint32 if values are often greater than 2^28. | uint32 | int | int | uint32 | uint | integer | Bignum or Fixnum (as required) |
+| <a name="fixed64" /> fixed64 | Always eight bytes. More efficient than uint64 if values are often greater than 2^56. | uint64 | long | int/long | uint64 | ulong | integer/string | Bignum |
+| <a name="sfixed32" /> sfixed32 | Always four bytes. | int32 | int | int | int32 | int | integer | Bignum or Fixnum (as required) |
+| <a name="sfixed64" /> sfixed64 | Always eight bytes. | int64 | long | int/long | int64 | long | integer/string | Bignum |
+| <a name="bool" /> bool |  | bool | boolean | boolean | bool | bool | boolean | TrueClass/FalseClass |
+| <a name="string" /> string | A string must always contain UTF-8 encoded or 7-bit ASCII text. | string | String | str/unicode | string | string | string | String (UTF-8) |
+| <a name="bytes" /> bytes | May contain any arbitrary sequence of bytes. | string | ByteString | str | []byte | ByteString | string | String (ASCII-8BIT) |
+
