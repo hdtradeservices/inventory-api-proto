@@ -22,7 +22,6 @@
   
     - [CheckSource](#inventory_api-CheckSource)
     - [CheckState](#inventory_api-CheckState)
-    - [WarehouseRole](#inventory_api-WarehouseRole)
   
     - [InventoryIntegrationService](#inventory_api-InventoryIntegrationService)
     - [WarehouseService](#inventory_api-WarehouseService)
@@ -50,6 +49,9 @@
 | state | [CheckState](#inventory_api-CheckState) |  |  |
 | message | [string](#string) |  | Prose for a human. Say what is wrong and what would fix it. |
 | source | [CheckSource](#inventory_api-CheckSource) |  | Who observed this. Zentail sets it; an integration filling it in on a WarehouseStatus response has it overwritten with INTEGRATION. |
+| warehouse_unique_id | [string](#string) |  | Which warehouse this check is about, when it is about one. Set by Zentail as it folds a WarehouseStatus response in, and on a check reporting that a warehouse could not be reached.
+
+Without it the fold is lossy: two warehouses returning the same check name are indistinguishable, and anything matching on name alone cannot say which one is broken. Empty on checks about the integration as a whole. |
 
 
 
@@ -236,7 +238,6 @@ is not enough — a batch may carry the same SKU for two warehouses.
 | ----- | ---- | ----- | ----------- |
 | warehouse_unique_id | [string](#string) |  | Send this as warehouse_unique_id on an InventoryUpdate. Never empty. |
 | name | [string](#string) |  | Operator-facing label, for logs and support conversations. Not a key, not stable, and not safe to match on. |
-| role | [WarehouseRole](#inventory_api-WarehouseRole) |  | Which contract this warehouse participates in. A caller that only ships from a warehouse does not hold stock there and has no reason to report inventory for it. |
 
 
 
@@ -299,19 +300,6 @@ is not enough — a batch may carry the same SKU for two warehouses.
 | CHECK_STATE_PASS | 1 |  |
 | CHECK_STATE_WARN | 2 |  |
 | CHECK_STATE_FAIL | 3 |  |
-
-
-
-<a name="inventory_api-WarehouseRole"></a>
-
-### WarehouseRole
-
-
-| Name | Number | Description |
-| ---- | ------ | ----------- |
-| WAREHOUSE_ROLE_UNSPECIFIED | 0 |  |
-| WAREHOUSE_ROLE_INVENTORY | 1 | The integration holds stock here. Inventory reports are expected. |
-| WAREHOUSE_ROLE_SHIPPING | 2 | The integration only ships from here. Stock is owned by someone else. |
 
 
  

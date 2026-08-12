@@ -201,6 +201,10 @@
         "source": {
           "$ref": "#/definitions/inventory_apiCheckSource",
           "description": "Who observed this. Zentail sets it; an integration filling it in on a\nWarehouseStatus response has it overwritten with INTEGRATION."
+        },
+        "warehouseUniqueId": {
+          "type": "string",
+          "description": "Which warehouse this check is about, when it is about one. Set by Zentail\nas it folds a WarehouseStatus response in, and on a check reporting that a\nwarehouse could not be reached.\n\nWithout it the fold is lossy: two warehouses returning the same check name\nare indistinguishable, and anything matching on name alone cannot say which\none is broken. Empty on checks about the integration as a whole."
         }
       }
     },
@@ -366,22 +370,8 @@
         "name": {
           "type": "string",
           "description": "Operator-facing label, for logs and support conversations. Not a key, not\nstable, and not safe to match on."
-        },
-        "role": {
-          "$ref": "#/definitions/inventory_apiWarehouseRole",
-          "description": "Which contract this warehouse participates in. A caller that only ships\nfrom a warehouse does not hold stock there and has no reason to report\ninventory for it."
         }
       }
-    },
-    "inventory_apiWarehouseRole": {
-      "type": "string",
-      "enum": [
-        "WAREHOUSE_ROLE_UNSPECIFIED",
-        "WAREHOUSE_ROLE_INVENTORY",
-        "WAREHOUSE_ROLE_SHIPPING"
-      ],
-      "default": "WAREHOUSE_ROLE_UNSPECIFIED",
-      "description": " - WAREHOUSE_ROLE_INVENTORY: The integration holds stock here. Inventory reports are expected.\n - WAREHOUSE_ROLE_SHIPPING: The integration only ships from here. Stock is owned by someone else."
     },
     "inventory_apiWarehouseStatusResponse": {
       "type": "object",
