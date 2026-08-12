@@ -188,18 +188,11 @@ message Warehouse {
   // Operator-facing label, for logs and support conversations. Not a key, not
   // stable, and not safe to match on.
   string name = 2;
-  // Which contract this warehouse participates in. A caller that only ships
-  // from a warehouse does not hold stock there and has no reason to report
-  // inventory for it.
-  WarehouseRole role = 3;
-}
 
-enum WarehouseRole {
-  WAREHOUSE_ROLE_UNSPECIFIED = 0;
-  // The integration holds stock here. Inventory reports are expected.
-  WAREHOUSE_ROLE_INVENTORY = 1;
-  // The integration only ships from here. Stock is owned by someone else.
-  WAREHOUSE_ROLE_SHIPPING = 2;
+  // 3 held a role telling a caller whether it holds stock here or only ships
+  // from here. Dropped as more than callers needed to know.
+  reserved 3;
+  reserved "role";
 }
 
 // ---------------------------------------------------------------------------
@@ -269,6 +262,14 @@ message Check {
   // Who observed this. Zentail sets it; an integration filling it in on a
   // WarehouseStatus response has it overwritten with INTEGRATION.
   CheckSource source = 4;
+  // Which warehouse this check is about, when it is about one. Set by Zentail
+  // as it folds a WarehouseStatus response in, and on a check reporting that a
+  // warehouse could not be reached.
+  //
+  // Without it the fold is lossy: two warehouses returning the same check name
+  // are indistinguishable, and anything matching on name alone cannot say which
+  // one is broken. Empty on checks about the integration as a whole.
+  string warehouse_unique_id = 5;
 }
 
 enum CheckSource {
