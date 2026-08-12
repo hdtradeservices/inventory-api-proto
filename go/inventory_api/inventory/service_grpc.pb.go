@@ -33,9 +33,25 @@ type InventoryIntegrationServiceClient interface {
 	// and reported as stale rather than applied. A slow retry overtaking a newer
 	// reading cannot roll the count backwards.
 	UpdateInventory(ctx context.Context, in *UpdateInventoryRequest, opts ...grpc.CallOption) (*UpdateInventoryResponse, error)
+	// ListWarehouses returns the warehouses bound to the caller's integration,
+	// and the identifier to use for each.
+	//
+	// This is the discovery call. Every write keys on warehouse_unique_id, which
+	// is the caller's own identifier rather than Zentail's internal id, so
+	// without this a client would have to be told its identifiers out of band and
+	// would silently break when they changed. Call it once at startup.
+	//
+	// Distinct from IntegrationStatus, which is prose for a human deciding
+	// whether the integration is healthy. This is structured data for a machine
+	// deciding what to send.
+	ListWarehouses(ctx context.Context, in *ListWarehousesRequest, opts ...grpc.CallOption) (*ListWarehousesResponse, error)
 	// IntegrationStatus returns diagnostic checks for the caller's integration —
 	// whether warehouses are bound to it, when stock was last reported, and
 	// whether Zentail considers that reading stale.
+	//
+	// If the integration implements WarehouseService, Zentail also asks it about
+	// each warehouse and folds those checks in, so one call answers "is this
+	// working" from both sides.
 	//
 	// An inventory integration fails quietly: nothing errors when a poll loop
 	// stops, the numbers simply age. This is how that surfaces.
@@ -62,6 +78,15 @@ func (c *inventoryIntegrationServiceClient) ListInventory(ctx context.Context, i
 func (c *inventoryIntegrationServiceClient) UpdateInventory(ctx context.Context, in *UpdateInventoryRequest, opts ...grpc.CallOption) (*UpdateInventoryResponse, error) {
 	out := new(UpdateInventoryResponse)
 	err := c.cc.Invoke(ctx, "/inventory_api.InventoryIntegrationService/UpdateInventory", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *inventoryIntegrationServiceClient) ListWarehouses(ctx context.Context, in *ListWarehousesRequest, opts ...grpc.CallOption) (*ListWarehousesResponse, error) {
+	out := new(ListWarehousesResponse)
+	err := c.cc.Invoke(ctx, "/inventory_api.InventoryIntegrationService/ListWarehouses", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -96,9 +121,25 @@ type InventoryIntegrationServiceServer interface {
 	// and reported as stale rather than applied. A slow retry overtaking a newer
 	// reading cannot roll the count backwards.
 	UpdateInventory(context.Context, *UpdateInventoryRequest) (*UpdateInventoryResponse, error)
+	// ListWarehouses returns the warehouses bound to the caller's integration,
+	// and the identifier to use for each.
+	//
+	// This is the discovery call. Every write keys on warehouse_unique_id, which
+	// is the caller's own identifier rather than Zentail's internal id, so
+	// without this a client would have to be told its identifiers out of band and
+	// would silently break when they changed. Call it once at startup.
+	//
+	// Distinct from IntegrationStatus, which is prose for a human deciding
+	// whether the integration is healthy. This is structured data for a machine
+	// deciding what to send.
+	ListWarehouses(context.Context, *ListWarehousesRequest) (*ListWarehousesResponse, error)
 	// IntegrationStatus returns diagnostic checks for the caller's integration —
 	// whether warehouses are bound to it, when stock was last reported, and
 	// whether Zentail considers that reading stale.
+	//
+	// If the integration implements WarehouseService, Zentail also asks it about
+	// each warehouse and folds those checks in, so one call answers "is this
+	// working" from both sides.
 	//
 	// An inventory integration fails quietly: nothing errors when a poll loop
 	// stops, the numbers simply age. This is how that surfaces.
@@ -114,6 +155,9 @@ func (UnimplementedInventoryIntegrationServiceServer) ListInventory(context.Cont
 }
 func (UnimplementedInventoryIntegrationServiceServer) UpdateInventory(context.Context, *UpdateInventoryRequest) (*UpdateInventoryResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateInventory not implemented")
+}
+func (UnimplementedInventoryIntegrationServiceServer) ListWarehouses(context.Context, *ListWarehousesRequest) (*ListWarehousesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListWarehouses not implemented")
 }
 func (UnimplementedInventoryIntegrationServiceServer) IntegrationStatus(context.Context, *IntegrationStatusRequest) (*IntegrationStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method IntegrationStatus not implemented")
@@ -166,6 +210,24 @@ func _InventoryIntegrationService_UpdateInventory_Handler(srv interface{}, ctx c
 	return interceptor(ctx, in, info, handler)
 }
 
+func _InventoryIntegrationService_ListWarehouses_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListWarehousesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InventoryIntegrationServiceServer).ListWarehouses(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/inventory_api.InventoryIntegrationService/ListWarehouses",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InventoryIntegrationServiceServer).ListWarehouses(ctx, req.(*ListWarehousesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _InventoryIntegrationService_IntegrationStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(IntegrationStatusRequest)
 	if err := dec(in); err != nil {
@@ -200,8 +262,102 @@ var InventoryIntegrationService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _InventoryIntegrationService_UpdateInventory_Handler,
 		},
 		{
+			MethodName: "ListWarehouses",
+			Handler:    _InventoryIntegrationService_ListWarehouses_Handler,
+		},
+		{
 			MethodName: "IntegrationStatus",
 			Handler:    _InventoryIntegrationService_IntegrationStatus_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "inventory_api/inventory/service.proto",
+}
+
+// WarehouseServiceClient is the client API for WarehouseService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type WarehouseServiceClient interface {
+	// WarehouseStatus returns the integration's own diagnostic checks for one
+	// warehouse — the things only it can see, such as expiring credentials, a
+	// rate limit, or a location it can no longer reach.
+	WarehouseStatus(ctx context.Context, in *WarehouseStatusRequest, opts ...grpc.CallOption) (*WarehouseStatusResponse, error)
+}
+
+type warehouseServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewWarehouseServiceClient(cc grpc.ClientConnInterface) WarehouseServiceClient {
+	return &warehouseServiceClient{cc}
+}
+
+func (c *warehouseServiceClient) WarehouseStatus(ctx context.Context, in *WarehouseStatusRequest, opts ...grpc.CallOption) (*WarehouseStatusResponse, error) {
+	out := new(WarehouseStatusResponse)
+	err := c.cc.Invoke(ctx, "/inventory_api.WarehouseService/WarehouseStatus", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// WarehouseServiceServer is the server API for WarehouseService service.
+// All implementations should embed UnimplementedWarehouseServiceServer
+// for forward compatibility
+type WarehouseServiceServer interface {
+	// WarehouseStatus returns the integration's own diagnostic checks for one
+	// warehouse — the things only it can see, such as expiring credentials, a
+	// rate limit, or a location it can no longer reach.
+	WarehouseStatus(context.Context, *WarehouseStatusRequest) (*WarehouseStatusResponse, error)
+}
+
+// UnimplementedWarehouseServiceServer should be embedded to have forward compatible implementations.
+type UnimplementedWarehouseServiceServer struct {
+}
+
+func (UnimplementedWarehouseServiceServer) WarehouseStatus(context.Context, *WarehouseStatusRequest) (*WarehouseStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method WarehouseStatus not implemented")
+}
+
+// UnsafeWarehouseServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to WarehouseServiceServer will
+// result in compilation errors.
+type UnsafeWarehouseServiceServer interface {
+	mustEmbedUnimplementedWarehouseServiceServer()
+}
+
+func RegisterWarehouseServiceServer(s grpc.ServiceRegistrar, srv WarehouseServiceServer) {
+	s.RegisterService(&WarehouseService_ServiceDesc, srv)
+}
+
+func _WarehouseService_WarehouseStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WarehouseStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WarehouseServiceServer).WarehouseStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/inventory_api.WarehouseService/WarehouseStatus",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WarehouseServiceServer).WarehouseStatus(ctx, req.(*WarehouseStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// WarehouseService_ServiceDesc is the grpc.ServiceDesc for WarehouseService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var WarehouseService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "inventory_api.WarehouseService",
+	HandlerType: (*WarehouseServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "WarehouseStatus",
+			Handler:    _WarehouseService_WarehouseStatus_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

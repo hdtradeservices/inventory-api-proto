@@ -101,6 +101,24 @@ func local_request_InventoryIntegrationService_UpdateInventory_0(ctx context.Con
 
 }
 
+func request_InventoryIntegrationService_ListWarehouses_0(ctx context.Context, marshaler runtime.Marshaler, client InventoryIntegrationServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var protoReq ListWarehousesRequest
+	var metadata runtime.ServerMetadata
+
+	msg, err := client.ListWarehouses(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
+func local_request_InventoryIntegrationService_ListWarehouses_0(ctx context.Context, marshaler runtime.Marshaler, server InventoryIntegrationServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var protoReq ListWarehousesRequest
+	var metadata runtime.ServerMetadata
+
+	msg, err := server.ListWarehouses(ctx, &protoReq)
+	return msg, metadata, err
+
+}
+
 func request_InventoryIntegrationService_IntegrationStatus_0(ctx context.Context, marshaler runtime.Marshaler, client InventoryIntegrationServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var protoReq IntegrationStatusRequest
 	var metadata runtime.ServerMetadata
@@ -115,6 +133,58 @@ func local_request_InventoryIntegrationService_IntegrationStatus_0(ctx context.C
 	var metadata runtime.ServerMetadata
 
 	msg, err := server.IntegrationStatus(ctx, &protoReq)
+	return msg, metadata, err
+
+}
+
+func request_WarehouseService_WarehouseStatus_0(ctx context.Context, marshaler runtime.Marshaler, client WarehouseServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var protoReq WarehouseStatusRequest
+	var metadata runtime.ServerMetadata
+
+	var (
+		val string
+		ok  bool
+		err error
+		_   = err
+	)
+
+	val, ok = pathParams["warehouse_unique_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "warehouse_unique_id")
+	}
+
+	protoReq.WarehouseUniqueId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "warehouse_unique_id", err)
+	}
+
+	msg, err := client.WarehouseStatus(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
+func local_request_WarehouseService_WarehouseStatus_0(ctx context.Context, marshaler runtime.Marshaler, server WarehouseServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var protoReq WarehouseStatusRequest
+	var metadata runtime.ServerMetadata
+
+	var (
+		val string
+		ok  bool
+		err error
+		_   = err
+	)
+
+	val, ok = pathParams["warehouse_unique_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "warehouse_unique_id")
+	}
+
+	protoReq.WarehouseUniqueId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "warehouse_unique_id", err)
+	}
+
+	msg, err := server.WarehouseStatus(ctx, &protoReq)
 	return msg, metadata, err
 
 }
@@ -171,6 +241,29 @@ func RegisterInventoryIntegrationServiceHandlerServer(ctx context.Context, mux *
 
 	})
 
+	mux.Handle("GET", pattern_InventoryIntegrationService_ListWarehouses_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		rctx, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/inventory_api.InventoryIntegrationService/ListWarehouses", runtime.WithHTTPPathPattern("/v2/inventory/warehouses"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_InventoryIntegrationService_ListWarehouses_0(rctx, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		ctx = runtime.NewServerMetadataContext(ctx, md)
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+
+		forward_InventoryIntegrationService_ListWarehouses_0(ctx, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+
+	})
+
 	mux.Handle("GET", pattern_InventoryIntegrationService_IntegrationStatus_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
@@ -191,6 +284,38 @@ func RegisterInventoryIntegrationServiceHandlerServer(ctx context.Context, mux *
 		}
 
 		forward_InventoryIntegrationService_IntegrationStatus_0(ctx, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+
+	})
+
+	return nil
+}
+
+// RegisterWarehouseServiceHandlerServer registers the http handlers for service WarehouseService to "mux".
+// UnaryRPC     :call WarehouseServiceServer directly.
+// StreamingRPC :currently unsupported pending https://github.com/grpc/grpc-go/issues/906.
+// Note that using this registration option will cause many gRPC library features to stop working. Consider using RegisterWarehouseServiceHandlerFromEndpoint instead.
+func RegisterWarehouseServiceHandlerServer(ctx context.Context, mux *runtime.ServeMux, server WarehouseServiceServer) error {
+
+	mux.Handle("GET", pattern_WarehouseService_WarehouseStatus_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		rctx, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/inventory_api.WarehouseService/WarehouseStatus", runtime.WithHTTPPathPattern("/v2/warehouse/status/{warehouse_unique_id}"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_WarehouseService_WarehouseStatus_0(rctx, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		ctx = runtime.NewServerMetadataContext(ctx, md)
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+
+		forward_WarehouseService_WarehouseStatus_0(ctx, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 
 	})
 
@@ -275,6 +400,26 @@ func RegisterInventoryIntegrationServiceHandlerClient(ctx context.Context, mux *
 
 	})
 
+	mux.Handle("GET", pattern_InventoryIntegrationService_ListWarehouses_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		rctx, err := runtime.AnnotateContext(ctx, mux, req, "/inventory_api.InventoryIntegrationService/ListWarehouses", runtime.WithHTTPPathPattern("/v2/inventory/warehouses"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_InventoryIntegrationService_ListWarehouses_0(rctx, inboundMarshaler, client, req, pathParams)
+		ctx = runtime.NewServerMetadataContext(ctx, md)
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+
+		forward_InventoryIntegrationService_ListWarehouses_0(ctx, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+
+	})
+
 	mux.Handle("GET", pattern_InventoryIntegrationService_IntegrationStatus_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
@@ -303,6 +448,8 @@ var (
 
 	pattern_InventoryIntegrationService_UpdateInventory_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v2", "inventory"}, ""))
 
+	pattern_InventoryIntegrationService_ListWarehouses_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v2", "inventory", "warehouses"}, ""))
+
 	pattern_InventoryIntegrationService_IntegrationStatus_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v2", "inventory", "status"}, ""))
 )
 
@@ -311,5 +458,76 @@ var (
 
 	forward_InventoryIntegrationService_UpdateInventory_0 = runtime.ForwardResponseMessage
 
+	forward_InventoryIntegrationService_ListWarehouses_0 = runtime.ForwardResponseMessage
+
 	forward_InventoryIntegrationService_IntegrationStatus_0 = runtime.ForwardResponseMessage
+)
+
+// RegisterWarehouseServiceHandlerFromEndpoint is same as RegisterWarehouseServiceHandler but
+// automatically dials to "endpoint" and closes the connection when "ctx" gets done.
+func RegisterWarehouseServiceHandlerFromEndpoint(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) (err error) {
+	conn, err := grpc.Dial(endpoint, opts...)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			if cerr := conn.Close(); cerr != nil {
+				grpclog.Infof("Failed to close conn to %s: %v", endpoint, cerr)
+			}
+			return
+		}
+		go func() {
+			<-ctx.Done()
+			if cerr := conn.Close(); cerr != nil {
+				grpclog.Infof("Failed to close conn to %s: %v", endpoint, cerr)
+			}
+		}()
+	}()
+
+	return RegisterWarehouseServiceHandler(ctx, mux, conn)
+}
+
+// RegisterWarehouseServiceHandler registers the http handlers for service WarehouseService to "mux".
+// The handlers forward requests to the grpc endpoint over "conn".
+func RegisterWarehouseServiceHandler(ctx context.Context, mux *runtime.ServeMux, conn *grpc.ClientConn) error {
+	return RegisterWarehouseServiceHandlerClient(ctx, mux, NewWarehouseServiceClient(conn))
+}
+
+// RegisterWarehouseServiceHandlerClient registers the http handlers for service WarehouseService
+// to "mux". The handlers forward requests to the grpc endpoint over the given implementation of "WarehouseServiceClient".
+// Note: the gRPC framework executes interceptors within the gRPC handler. If the passed in "WarehouseServiceClient"
+// doesn't go through the normal gRPC flow (creating a gRPC client etc.) then it will be up to the passed in
+// "WarehouseServiceClient" to call the correct interceptors.
+func RegisterWarehouseServiceHandlerClient(ctx context.Context, mux *runtime.ServeMux, client WarehouseServiceClient) error {
+
+	mux.Handle("GET", pattern_WarehouseService_WarehouseStatus_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		rctx, err := runtime.AnnotateContext(ctx, mux, req, "/inventory_api.WarehouseService/WarehouseStatus", runtime.WithHTTPPathPattern("/v2/warehouse/status/{warehouse_unique_id}"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_WarehouseService_WarehouseStatus_0(rctx, inboundMarshaler, client, req, pathParams)
+		ctx = runtime.NewServerMetadataContext(ctx, md)
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+
+		forward_WarehouseService_WarehouseStatus_0(ctx, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+
+	})
+
+	return nil
+}
+
+var (
+	pattern_WarehouseService_WarehouseStatus_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v2", "warehouse", "status", "warehouse_unique_id"}, ""))
+)
+
+var (
+	forward_WarehouseService_WarehouseStatus_0 = runtime.ForwardResponseMessage
 )

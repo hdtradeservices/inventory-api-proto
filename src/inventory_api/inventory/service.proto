@@ -64,9 +64,30 @@ service InventoryIntegrationService {
     };
   }
 
+  // ListWarehouses returns the warehouses bound to the caller's integration,
+  // and the identifier to use for each.
+  //
+  // This is the discovery call. Every write keys on warehouse_unique_id, which
+  // is the caller's own identifier rather than Zentail's internal id, so
+  // without this a client would have to be told its identifiers out of band and
+  // would silently break when they changed. Call it once at startup.
+  //
+  // Distinct from IntegrationStatus, which is prose for a human deciding
+  // whether the integration is healthy. This is structured data for a machine
+  // deciding what to send.
+  rpc ListWarehouses(ListWarehousesRequest) returns (ListWarehousesResponse) {
+    option (google.api.http) = {
+      get : "/v2/inventory/warehouses"
+    };
+  }
+
   // IntegrationStatus returns diagnostic checks for the caller's integration —
   // whether warehouses are bound to it, when stock was last reported, and
   // whether Zentail considers that reading stale.
+  //
+  // If the integration implements WarehouseService, Zentail also asks it about
+  // each warehouse and folds those checks in, so one call answers "is this
+  // working" from both sides.
   //
   // An inventory integration fails quietly: nothing errors when a poll loop
   // stops, the numbers simply age. This is how that surfaces.
@@ -76,7 +97,46 @@ service InventoryIntegrationService {
       get : "/v2/inventory/status"
     };
   }
+
 }
+
+// WarehouseService is implemented by the integration, not by Zentail.
+//
+// Same shape as listing's SalesChannelService in api-proto: the integration
+// stands up this service, Zentail dials it, and the answer is folded into the
+// surface an operator already reads. Zentail can only observe an integration
+// from the outside — it knows the numbers stopped arriving, never why. This is
+// where the integration says why.
+//
+// Zentail calls it while serving IntegrationStatus, so it must be cheap and it
+// must not call back into Zentail. If the call fails or times out, Zentail
+// reports that as a failed check rather than failing the status request: an
+// integration that cannot answer "am I healthy" has answered it.
+service WarehouseService {
+  option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_tag) = {
+    name : "Warehouse Service",
+    description : "Implemented by the integration. Zentail calls this to ask "
+                  "the integration about its own health."
+  };
+
+  // WarehouseStatus returns the integration's own diagnostic checks for one
+  // warehouse — the things only it can see, such as expiring credentials, a
+  // rate limit, or a location it can no longer reach.
+  rpc WarehouseStatus(WarehouseStatusRequest)
+      returns (WarehouseStatusResponse) {
+    option (google.api.http) = {
+      get : "/v2/warehouse/status/{warehouse_unique_id}"
+    };
+  }
+}
+
+message WarehouseStatusRequest {
+  // The warehouse being asked about, named with the integration's own
+  // identifier — the same value ListWarehouses vends.
+  string warehouse_unique_id = 1;
+}
+
+message WarehouseStatusResponse { repeated Check checks = 1; }
 
 // ---------------------------------------------------------------------------
 // Reading
@@ -106,6 +166,40 @@ message InventoryItem {
   int32 quantity = 3;
   // When that belief was last updated, by anyone.
   google.protobuf.Timestamp last_updated_ts = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Warehouses
+// ---------------------------------------------------------------------------
+
+message ListWarehousesRequest {}
+
+message ListWarehousesResponse {
+  // Only warehouses the caller can actually name. A warehouse bound to the
+  // integration with no identifier set is omitted, because there is no value a
+  // caller could send to address it; IntegrationStatus is where that shows up
+  // as a problem to fix.
+  repeated Warehouse warehouses = 1;
+}
+
+message Warehouse {
+  // Send this as warehouse_unique_id on an InventoryUpdate. Never empty.
+  string warehouse_unique_id = 1;
+  // Operator-facing label, for logs and support conversations. Not a key, not
+  // stable, and not safe to match on.
+  string name = 2;
+  // Which contract this warehouse participates in. A caller that only ships
+  // from a warehouse does not hold stock there and has no reason to report
+  // inventory for it.
+  WarehouseRole role = 3;
+}
+
+enum WarehouseRole {
+  WAREHOUSE_ROLE_UNSPECIFIED = 0;
+  // The integration holds stock here. Inventory reports are expected.
+  WAREHOUSE_ROLE_INVENTORY = 1;
+  // The integration only ships from here. Stock is owned by someone else.
+  WAREHOUSE_ROLE_SHIPPING = 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -158,12 +252,31 @@ message InventoryUpdateResult {
 
 message IntegrationStatusRequest {}
 
-message IntegrationStatusResponse { repeated Check checks = 1; }
+message IntegrationStatusResponse {
+  // Zentail's own observations and the integration's last reported checks, in
+  // one list. Read `source` to tell them apart; render them together, because
+  // an operator asking "is this working" does not care who noticed.
+  repeated Check checks = 1;
+}
 
 message Check {
+  // Stable identifier, not prose — an operator or an alert matches on this, so
+  // it must not change when the wording does. Lower_snake_case by convention.
   string name = 1;
   CheckState state = 2;
+  // Prose for a human. Say what is wrong and what would fix it.
   string message = 3;
+  // Who observed this. Zentail sets it; an integration filling it in on a
+  // WarehouseStatus response has it overwritten with INTEGRATION.
+  CheckSource source = 4;
+}
+
+enum CheckSource {
+  CHECK_SOURCE_UNSPECIFIED = 0;
+  // Zentail observed this from the outside.
+  CHECK_SOURCE_ZENTAIL = 1;
+  // The integration reported this about itself.
+  CHECK_SOURCE_INTEGRATION = 2;
 }
 
 enum CheckState {
