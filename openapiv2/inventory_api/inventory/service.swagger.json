@@ -8,6 +8,10 @@
     {
       "name": "InventoryIntegrationService",
       "description": "Report on-hand stock for the warehouses you hold, and see what Zentail currently believes."
+    },
+    {
+      "name": "WarehouseService",
+      "description": "Implemented by the integration. Zentail calls this to ask the integration about its own health."
     }
   ],
   "consumes": [
@@ -101,7 +105,7 @@
     "/v2/inventory/status": {
       "get": {
         "summary": "IntegrationStatus returns diagnostic checks for the caller's integration —\nwhether warehouses are bound to it, when stock was last reported, and\nwhether Zentail considers that reading stale.",
-        "description": "An inventory integration fails quietly: nothing errors when a poll loop\nstops, the numbers simply age. This is how that surfaces.",
+        "description": "If the integration implements WarehouseService, Zentail also asks it about\neach warehouse and folds those checks in, so one call answers \"is this\nworking\" from both sides.\n\nAn inventory integration fails quietly: nothing errors when a poll loop\nstops, the numbers simply age. This is how that surfaces.",
         "operationId": "InventoryIntegrationService_IntegrationStatus",
         "responses": {
           "200": {
@@ -121,6 +125,62 @@
           "InventoryIntegrationService"
         ]
       }
+    },
+    "/v2/inventory/warehouses": {
+      "get": {
+        "summary": "ListWarehouses returns the warehouses bound to the caller's integration,\nand the identifier to use for each.",
+        "description": "This is the discovery call. Every write keys on warehouse_unique_id, which\nis the caller's own identifier rather than Zentail's internal id, so\nwithout this a client would have to be told its identifiers out of band and\nwould silently break when they changed. Call it once at startup.\n\nDistinct from IntegrationStatus, which is prose for a human deciding\nwhether the integration is healthy. This is structured data for a machine\ndeciding what to send.",
+        "operationId": "InventoryIntegrationService_ListWarehouses",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/inventory_apiListWarehousesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "InventoryIntegrationService"
+        ]
+      }
+    },
+    "/v2/warehouse/status/{warehouseUniqueId}": {
+      "get": {
+        "summary": "WarehouseStatus returns the integration's own diagnostic checks for one\nwarehouse — the things only it can see, such as expiring credentials, a\nrate limit, or a location it can no longer reach.",
+        "operationId": "WarehouseService_WarehouseStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/inventory_apiWarehouseStatusResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "warehouseUniqueId",
+            "description": "The warehouse being asked about, named with the integration's own\nidentifier — the same value ListWarehouses vends.",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "WarehouseService"
+        ]
+      }
     }
   },
   "definitions": {
@@ -128,15 +188,31 @@
       "type": "object",
       "properties": {
         "name": {
-          "type": "string"
+          "type": "string",
+          "description": "Stable identifier, not prose — an operator or an alert matches on this, so\nit must not change when the wording does. Lower_snake_case by convention."
         },
         "state": {
           "$ref": "#/definitions/inventory_apiCheckState"
         },
         "message": {
-          "type": "string"
+          "type": "string",
+          "description": "Prose for a human. Say what is wrong and what would fix it."
+        },
+        "source": {
+          "$ref": "#/definitions/inventory_apiCheckSource",
+          "description": "Who observed this. Zentail sets it; an integration filling it in on a\nWarehouseStatus response has it overwritten with INTEGRATION."
         }
       }
+    },
+    "inventory_apiCheckSource": {
+      "type": "string",
+      "enum": [
+        "CHECK_SOURCE_UNSPECIFIED",
+        "CHECK_SOURCE_ZENTAIL",
+        "CHECK_SOURCE_INTEGRATION"
+      ],
+      "default": "CHECK_SOURCE_UNSPECIFIED",
+      "description": " - CHECK_SOURCE_ZENTAIL: Zentail observed this from the outside.\n - CHECK_SOURCE_INTEGRATION: The integration reported this about itself."
     },
     "inventory_apiCheckState": {
       "type": "string",
@@ -155,7 +231,8 @@
           "type": "array",
           "items": {
             "$ref": "#/definitions/inventory_apiCheck"
-          }
+          },
+          "description": "Zentail's own observations and the integration's last reported checks, in\none list. Read `source` to tell them apart; render them together, because\nan operator asking \"is this working\" does not care who noticed."
         }
       }
     },
@@ -238,6 +315,18 @@
         }
       }
     },
+    "inventory_apiListWarehousesResponse": {
+      "type": "object",
+      "properties": {
+        "warehouses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/inventory_apiWarehouse"
+          },
+          "description": "Only warehouses the caller can actually name. A warehouse bound to the\nintegration with no identifier set is omitted, because there is no value a\ncaller could send to address it; IntegrationStatus is where that shows up\nas a problem to fix."
+        }
+      }
+    },
     "inventory_apiUpdateInventoryRequest": {
       "type": "object",
       "properties": {
@@ -264,6 +353,44 @@
             "$ref": "#/definitions/inventory_apiInventoryUpdateResult"
           },
           "description": "One entry per update. Order is not guaranteed, which is why each result\nechoes its full key."
+        }
+      }
+    },
+    "inventory_apiWarehouse": {
+      "type": "object",
+      "properties": {
+        "warehouseUniqueId": {
+          "type": "string",
+          "description": "Send this as warehouse_unique_id on an InventoryUpdate. Never empty."
+        },
+        "name": {
+          "type": "string",
+          "description": "Operator-facing label, for logs and support conversations. Not a key, not\nstable, and not safe to match on."
+        },
+        "role": {
+          "$ref": "#/definitions/inventory_apiWarehouseRole",
+          "description": "Which contract this warehouse participates in. A caller that only ships\nfrom a warehouse does not hold stock there and has no reason to report\ninventory for it."
+        }
+      }
+    },
+    "inventory_apiWarehouseRole": {
+      "type": "string",
+      "enum": [
+        "WAREHOUSE_ROLE_UNSPECIFIED",
+        "WAREHOUSE_ROLE_INVENTORY",
+        "WAREHOUSE_ROLE_SHIPPING"
+      ],
+      "default": "WAREHOUSE_ROLE_UNSPECIFIED",
+      "description": " - WAREHOUSE_ROLE_INVENTORY: The integration holds stock here. Inventory reports are expected.\n - WAREHOUSE_ROLE_SHIPPING: The integration only ships from here. Stock is owned by someone else."
+    },
+    "inventory_apiWarehouseStatusResponse": {
+      "type": "object",
+      "properties": {
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/inventory_apiCheck"
+          }
         }
       }
     },
