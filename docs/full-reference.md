@@ -22,6 +22,7 @@
   
     - [CheckSource](#inventory_api-CheckSource)
     - [CheckState](#inventory_api-CheckState)
+    - [UpdateFailureReason](#inventory_api-UpdateFailureReason)
   
     - [InventoryIntegrationService](#inventory_api-InventoryIntegrationService)
     - [WarehouseService](#inventory_api-WarehouseService)
@@ -132,7 +133,10 @@ is not enough — a batch may carry the same SKU for two warehouses.
 | warehouse_unique_id | [string](#string) |  |  |
 | success | [bool](#bool) |  |  |
 | error_message | [string](#string) |  |  |
-| stale | [bool](#bool) |  | True when the update was discarded because observed_ts predated the value Zentail already held. Not an error: the newer reading stands. Treat as success unless it is happening constantly, which means clock skew or a second writer. |
+| stale | [bool](#bool) |  | True when the update was discarded because observed_ts predated the value Zentail already held. Not an error: the newer reading stands. Treat as success unless it is happening constantly, which means clock skew or a second writer.
+
+A stale result reports success = false with failure_reason UNSPECIFIED, so check stale before failure_reason or a normal discard reads as a fault. |
+| failure_reason | [UpdateFailureReason](#inventory_api-UpdateFailureReason) |  | Why the update was rejected, for code to branch on. error_message stays the human-facing detail. Only meaningful when success is false and stale is false; every other case leaves this UNSPECIFIED. |
 
 
 
@@ -300,6 +304,24 @@ is not enough — a batch may carry the same SKU for two warehouses.
 | CHECK_STATE_PASS | 1 |  |
 | CHECK_STATE_WARN | 2 |  |
 | CHECK_STATE_FAIL | 3 |  |
+
+
+
+<a name="inventory_api-UpdateFailureReason"></a>
+
+### UpdateFailureReason
+UpdateFailureReason classifies a rejected InventoryUpdate. UNKNOWN_SKU is the
+one an integration is expected to see in bulk and should not alert on: the
+integration&#39;s catalog is not Zentail&#39;s. Anything else is a real fault.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| UPDATE_FAILURE_REASON_UNSPECIFIED | 0 |  |
+| UPDATE_FAILURE_REASON_UNKNOWN_SKU | 1 | The SKU is not in Zentail&#39;s catalog for this account. |
+| UPDATE_FAILURE_REASON_WAREHOUSE_NOT_YOURS | 2 | warehouse_unique_id does not name a warehouse this integration owns. |
+| UPDATE_FAILURE_REASON_MISSING_SKU | 3 | The update carried no SKU. |
+| UPDATE_FAILURE_REASON_INTERNAL | 4 | Zentail failed to apply the update. Retryable; read error_message. |
+| UPDATE_FAILURE_REASON_INVALID | 5 | The update is permanently unacceptable for a reason not named above — a negative quantity, say. Do not retry it unchanged; read error_message. Use INTERNAL instead when a retry could succeed. |
 
 
  

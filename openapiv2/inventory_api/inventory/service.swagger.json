@@ -299,7 +299,11 @@
         },
         "stale": {
           "type": "boolean",
-          "description": "True when the update was discarded because observed_ts predated the value\nZentail already held. Not an error: the newer reading stands. Treat as\nsuccess unless it is happening constantly, which means clock skew or a\nsecond writer."
+          "description": "True when the update was discarded because observed_ts predated the value\nZentail already held. Not an error: the newer reading stands. Treat as\nsuccess unless it is happening constantly, which means clock skew or a\nsecond writer.\n\nA stale result reports success = false with failure_reason UNSPECIFIED, so\ncheck stale before failure_reason or a normal discard reads as a fault."
+        },
+        "failureReason": {
+          "$ref": "#/definitions/inventory_apiUpdateFailureReason",
+          "description": "Why the update was rejected, for code to branch on. error_message stays the\nhuman-facing detail. Only meaningful when success is false and stale is\nfalse; every other case leaves this UNSPECIFIED."
         }
       },
       "description": "InventoryUpdateResult echoes the full key of the update it answers. SKU alone\nis not enough — a batch may carry the same SKU for two warehouses."
@@ -330,6 +334,19 @@
           "description": "Only warehouses the caller can actually name. A warehouse bound to the\nintegration with no identifier set is omitted, because there is no value a\ncaller could send to address it; IntegrationStatus is where that shows up\nas a problem to fix."
         }
       }
+    },
+    "inventory_apiUpdateFailureReason": {
+      "type": "string",
+      "enum": [
+        "UPDATE_FAILURE_REASON_UNSPECIFIED",
+        "UPDATE_FAILURE_REASON_UNKNOWN_SKU",
+        "UPDATE_FAILURE_REASON_WAREHOUSE_NOT_YOURS",
+        "UPDATE_FAILURE_REASON_MISSING_SKU",
+        "UPDATE_FAILURE_REASON_INTERNAL",
+        "UPDATE_FAILURE_REASON_INVALID"
+      ],
+      "default": "UPDATE_FAILURE_REASON_UNSPECIFIED",
+      "description": "UpdateFailureReason classifies a rejected InventoryUpdate. UNKNOWN_SKU is the\none an integration is expected to see in bulk and should not alert on: the\nintegration's catalog is not Zentail's. Anything else is a real fault.\n\n - UPDATE_FAILURE_REASON_UNKNOWN_SKU: The SKU is not in Zentail's catalog for this account.\n - UPDATE_FAILURE_REASON_WAREHOUSE_NOT_YOURS: warehouse_unique_id does not name a warehouse this integration owns.\n - UPDATE_FAILURE_REASON_MISSING_SKU: The update carried no SKU.\n - UPDATE_FAILURE_REASON_INTERNAL: Zentail failed to apply the update. Retryable; read error_message.\n - UPDATE_FAILURE_REASON_INVALID: The update is permanently unacceptable for a reason not named above — a\nnegative quantity, say. Do not retry it unchanged; read error_message.\nUse INTERNAL instead when a retry could succeed."
     },
     "inventory_apiUpdateInventoryRequest": {
       "type": "object",
