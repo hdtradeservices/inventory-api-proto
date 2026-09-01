@@ -236,7 +236,14 @@ message InventoryUpdateResult {
   // Zentail already held. Not an error: the newer reading stands. Treat as
   // success unless it is happening constantly, which means clock skew or a
   // second writer.
+  //
+  // A stale result reports success = false with failure_reason UNSPECIFIED, so
+  // check stale before failure_reason or a normal discard reads as a fault.
   bool stale = 5;
+  // Why the update was rejected, for code to branch on. error_message stays the
+  // human-facing detail. Only meaningful when success is false and stale is
+  // false; every other case leaves this UNSPECIFIED.
+  UpdateFailureReason failure_reason = 6;
 }
 
 // ---------------------------------------------------------------------------
@@ -285,4 +292,23 @@ enum CheckState {
   CHECK_STATE_PASS = 1;
   CHECK_STATE_WARN = 2;
   CHECK_STATE_FAIL = 3;
+}
+
+// UpdateFailureReason classifies a rejected InventoryUpdate. UNKNOWN_SKU is the
+// one an integration is expected to see in bulk and should not alert on: the
+// integration's catalog is not Zentail's. Anything else is a real fault.
+enum UpdateFailureReason {
+  UPDATE_FAILURE_REASON_UNSPECIFIED = 0;
+  // The SKU is not in Zentail's catalog for this account.
+  UPDATE_FAILURE_REASON_UNKNOWN_SKU = 1;
+  // warehouse_unique_id does not name a warehouse this integration owns.
+  UPDATE_FAILURE_REASON_WAREHOUSE_NOT_YOURS = 2;
+  // The update carried no SKU.
+  UPDATE_FAILURE_REASON_MISSING_SKU = 3;
+  // Zentail failed to apply the update. Retryable; read error_message.
+  UPDATE_FAILURE_REASON_INTERNAL = 4;
+  // The update is permanently unacceptable for a reason not named above — a
+  // negative quantity, say. Do not retry it unchanged; read error_message.
+  // Use INTERNAL instead when a retry could succeed.
+  UPDATE_FAILURE_REASON_INVALID = 5;
 }
