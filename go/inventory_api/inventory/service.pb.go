@@ -26,6 +26,8 @@ const (
 type CheckSource int32
 
 const (
+	// Not set. Zentail fills this in on every check it returns, so this value
+	// only appears on a check an integration sent and Zentail has not folded in.
 	CheckSource_CHECK_SOURCE_UNSPECIFIED CheckSource = 0
 	// Zentail observed this from the outside.
 	CheckSource_CHECK_SOURCE_ZENTAIL CheckSource = 1
@@ -77,10 +79,17 @@ func (CheckSource) EnumDescriptor() ([]byte, []int) {
 type CheckState int32
 
 const (
+	// Zentail never sends this. Treat it as a check you cannot interpret rather
+	// than as a pass.
 	CheckState_CHECK_STATE_UNSPECIFIED CheckState = 0
-	CheckState_CHECK_STATE_PASS        CheckState = 1
-	CheckState_CHECK_STATE_WARN        CheckState = 2
-	CheckState_CHECK_STATE_FAIL        CheckState = 3
+	// Healthy, nothing to do.
+	CheckState_CHECK_STATE_PASS CheckState = 1
+	// Working, but heading somewhere bad — stock arriving later than expected, a
+	// credential close to expiring. Worth looking at before it becomes a FAIL.
+	CheckState_CHECK_STATE_WARN CheckState = 2
+	// Broken now. The quantities this check covers should not be trusted until it
+	// clears.
+	CheckState_CHECK_STATE_FAIL CheckState = 3
 )
 
 // Enum value maps for CheckState.
@@ -248,6 +257,10 @@ type WarehouseStatusResponse struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
+	// Everything the integration knows about this warehouse's health, one entry
+	// per condition. Leave `source` and `warehouse_unique_id` unset; Zentail
+	// overwrites both as it folds these into IntegrationStatus. An empty list
+	// means nothing to report, which Zentail renders as healthy.
 	Checks []*Check `protobuf:"bytes,1,rep,name=checks,proto3" json:"checks,omitempty"`
 }
 
@@ -362,6 +375,9 @@ type ListInventoryResponse struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
+	// One entry per SKU-and-warehouse pair, so a SKU stocked in two of the
+	// caller's warehouses appears twice. Empty when the filter matched nothing,
+	// which is not an error.
 	Items []*InventoryItem `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
 	// Empty when the page is the last one.
 	NextCursor string `protobuf:"bytes,2,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
@@ -418,6 +434,9 @@ type InventoryItem struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
+	// Zentail's SKU for the product, and the value to send back on an
+	// InventoryUpdate. Mapping it to the integration's own product code is the
+	// caller's job; a mismatch here is the usual cause of UNKNOWN_SKU.
 	Sku string `protobuf:"bytes,1,opt,name=sku,proto3" json:"sku,omitempty"`
 	// The caller's own identifier for the warehouse, not Zentail's internal id.
 	WarehouseUniqueId string `protobuf:"bytes,2,opt,name=warehouse_unique_id,json=warehouseUniqueId,proto3" json:"warehouse_unique_id,omitempty"`
@@ -699,7 +718,15 @@ type InventoryUpdate struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Sku               string `protobuf:"bytes,1,opt,name=sku,proto3" json:"sku,omitempty"`
+	// The Zentail SKU whose quantity this sets, exactly as ListInventory vends
+	// it — matching is exact, including case. A SKU Zentail's catalog does not
+	// carry is rejected with UNKNOWN_SKU and the rest of the batch still applies.
+	Sku string `protobuf:"bytes,1,opt,name=sku,proto3" json:"sku,omitempty"`
+	// Which of the caller's warehouses this quantity is in, named with the
+	// identifier ListWarehouses vends. Required: one SKU can be stocked in
+	// several warehouses and an update sets exactly one of them, so omitting it
+	// does not mean "everywhere". A warehouse the integration does not own is
+	// rejected with WAREHOUSE_NOT_YOURS.
 	WarehouseUniqueId string `protobuf:"bytes,2,opt,name=warehouse_unique_id,json=warehouseUniqueId,proto3" json:"warehouse_unique_id,omitempty"`
 	// Absolute on-hand, not a delta. What is physically there right now,
 	// excluding anything already picked for an order.
@@ -824,10 +851,20 @@ type InventoryUpdateResult struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Sku               string `protobuf:"bytes,1,opt,name=sku,proto3" json:"sku,omitempty"`
+	// The SKU this result answers for, echoed from the update that produced it.
+	Sku string `protobuf:"bytes,1,opt,name=sku,proto3" json:"sku,omitempty"`
+	// The warehouse this result answers for, echoed from the update. Both halves
+	// of the key are echoed because a batch may carry the same SKU for two
+	// warehouses, so the SKU alone does not say which update a result belongs to.
 	WarehouseUniqueId string `protobuf:"bytes,2,opt,name=warehouse_unique_id,json=warehouseUniqueId,proto3" json:"warehouse_unique_id,omitempty"`
-	Success           bool   `protobuf:"varint,3,opt,name=success,proto3" json:"success,omitempty"`
-	ErrorMessage      string `protobuf:"bytes,4,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	// True when Zentail applied the update. False covers a real rejection and a
+	// discarded out-of-order reading alike, so read `stale` before treating false
+	// as a fault.
+	Success bool `protobuf:"varint,3,opt,name=success,proto3" json:"success,omitempty"`
+	// Human-facing detail for a rejection, for logs and support conversations.
+	// Empty on success. Do not branch on it — the wording is not stable; branch
+	// on failure_reason instead.
+	ErrorMessage string `protobuf:"bytes,4,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
 	// True when the update was discarded because observed_ts predated the value
 	// Zentail already held. Not an error: the newer reading stands. Treat as
 	// success unless it is happening constantly, which means clock skew or a
@@ -1011,7 +1048,10 @@ type Check struct {
 
 	// Stable identifier, not prose — an operator or an alert matches on this, so
 	// it must not change when the wording does. Lower_snake_case by convention.
-	Name  string     `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// How bad this is. FAIL means the stock this check covers is wrong or missing
+	// right now; WARN means it still works but is degrading, which is where a
+	// stalling poll loop shows up first.
 	State CheckState `protobuf:"varint,2,opt,name=state,proto3,enum=inventory_api.CheckState" json:"state,omitempty"`
 	// Prose for a human. Say what is wrong and what would fix it.
 	Message string `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`

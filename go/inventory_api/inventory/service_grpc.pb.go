@@ -281,6 +281,13 @@ type WarehouseServiceClient interface {
 	// WarehouseStatus returns the integration's own diagnostic checks for one
 	// warehouse — the things only it can see, such as expiring credentials, a
 	// rate limit, or a location it can no longer reach.
+	//
+	// Zentail calls this while serving IntegrationStatus, so answer from state
+	// you already hold and return quickly. Report a problem as a failing Check
+	// rather than as a gRPC error: an error is indistinguishable from the
+	// integration being unreachable, and loses whatever the check would have
+	// said. Returning no checks means "nothing to report", which reads as
+	// healthy.
 	WarehouseStatus(ctx context.Context, in *WarehouseStatusRequest, opts ...grpc.CallOption) (*WarehouseStatusResponse, error)
 }
 
@@ -308,6 +315,13 @@ type WarehouseServiceServer interface {
 	// WarehouseStatus returns the integration's own diagnostic checks for one
 	// warehouse — the things only it can see, such as expiring credentials, a
 	// rate limit, or a location it can no longer reach.
+	//
+	// Zentail calls this while serving IntegrationStatus, so answer from state
+	// you already hold and return quickly. Report a problem as a failing Check
+	// rather than as a gRPC error: an error is indistinguishable from the
+	// integration being unreachable, and loses whatever the check would have
+	// said. Returning no checks means "nothing to report", which reads as
+	// healthy.
 	WarehouseStatus(context.Context, *WarehouseStatusRequest) (*WarehouseStatusResponse, error)
 }
 
