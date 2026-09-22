@@ -122,6 +122,13 @@ service WarehouseService {
   // WarehouseStatus returns the integration's own diagnostic checks for one
   // warehouse — the things only it can see, such as expiring credentials, a
   // rate limit, or a location it can no longer reach.
+  //
+  // Zentail calls this while serving IntegrationStatus, so answer from state
+  // you already hold and return quickly. Report a problem as a failing Check
+  // rather than as a gRPC error: an error is indistinguishable from the
+  // integration being unreachable, and loses whatever the check would have
+  // said. Returning no checks means "nothing to report", which reads as
+  // healthy.
   rpc WarehouseStatus(WarehouseStatusRequest)
       returns (WarehouseStatusResponse) {
     option (google.api.http) = {
@@ -136,7 +143,13 @@ message WarehouseStatusRequest {
   string warehouse_unique_id = 1;
 }
 
-message WarehouseStatusResponse { repeated Check checks = 1; }
+message WarehouseStatusResponse {
+  // Everything the integration knows about this warehouse's health, one entry
+  // per condition. Leave `source` and `warehouse_unique_id` unset; Zentail
+  // overwrites both as it folds these into IntegrationStatus. An empty list
+  // means nothing to report, which Zentail renders as healthy.
+  repeated Check checks = 1;
+}
 
 // ---------------------------------------------------------------------------
 // Reading
@@ -153,12 +166,18 @@ message ListInventoryRequest {
 }
 
 message ListInventoryResponse {
+  // One entry per SKU-and-warehouse pair, so a SKU stocked in two of the
+  // caller's warehouses appears twice. Empty when the filter matched nothing,
+  // which is not an error.
   repeated InventoryItem items = 1;
   // Empty when the page is the last one.
   string next_cursor = 2;
 }
 
 message InventoryItem {
+  // Zentail's SKU for the product, and the value to send back on an
+  // InventoryUpdate. Mapping it to the integration's own product code is the
+  // caller's job; a mismatch here is the usual cause of UNKNOWN_SKU.
   string sku = 1;
   // The caller's own identifier for the warehouse, not Zentail's internal id.
   string warehouse_unique_id = 2;
@@ -210,7 +229,15 @@ message UpdateInventoryRequest {
 }
 
 message InventoryUpdate {
+  // The Zentail SKU whose quantity this sets, exactly as ListInventory vends
+  // it — matching is exact, including case. A SKU Zentail's catalog does not
+  // carry is rejected with UNKNOWN_SKU and the rest of the batch still applies.
   string sku = 1;
+  // Which of the caller's warehouses this quantity is in, named with the
+  // identifier ListWarehouses vends. Required: one SKU can be stocked in
+  // several warehouses and an update sets exactly one of them, so omitting it
+  // does not mean "everywhere". A warehouse the integration does not own is
+  // rejected with WAREHOUSE_NOT_YOURS.
   string warehouse_unique_id = 2;
   // Absolute on-hand, not a delta. What is physically there right now,
   // excluding anything already picked for an order.
@@ -228,9 +255,19 @@ message UpdateInventoryResponse {
 // InventoryUpdateResult echoes the full key of the update it answers. SKU alone
 // is not enough — a batch may carry the same SKU for two warehouses.
 message InventoryUpdateResult {
+  // The SKU this result answers for, echoed from the update that produced it.
   string sku = 1;
+  // The warehouse this result answers for, echoed from the update. Both halves
+  // of the key are echoed because a batch may carry the same SKU for two
+  // warehouses, so the SKU alone does not say which update a result belongs to.
   string warehouse_unique_id = 2;
+  // True when Zentail applied the update. False covers a real rejection and a
+  // discarded out-of-order reading alike, so read `stale` before treating false
+  // as a fault.
   bool success = 3;
+  // Human-facing detail for a rejection, for logs and support conversations.
+  // Empty on success. Do not branch on it — the wording is not stable; branch
+  // on failure_reason instead.
   string error_message = 4;
   // True when the update was discarded because observed_ts predated the value
   // Zentail already held. Not an error: the newer reading stands. Treat as
@@ -263,6 +300,9 @@ message Check {
   // Stable identifier, not prose — an operator or an alert matches on this, so
   // it must not change when the wording does. Lower_snake_case by convention.
   string name = 1;
+  // How bad this is. FAIL means the stock this check covers is wrong or missing
+  // right now; WARN means it still works but is degrading, which is where a
+  // stalling poll loop shows up first.
   CheckState state = 2;
   // Prose for a human. Say what is wrong and what would fix it.
   string message = 3;
@@ -280,6 +320,8 @@ message Check {
 }
 
 enum CheckSource {
+  // Not set. Zentail fills this in on every check it returns, so this value
+  // only appears on a check an integration sent and Zentail has not folded in.
   CHECK_SOURCE_UNSPECIFIED = 0;
   // Zentail observed this from the outside.
   CHECK_SOURCE_ZENTAIL = 1;
@@ -288,9 +330,16 @@ enum CheckSource {
 }
 
 enum CheckState {
+  // Zentail never sends this. Treat it as a check you cannot interpret rather
+  // than as a pass.
   CHECK_STATE_UNSPECIFIED = 0;
+  // Healthy, nothing to do.
   CHECK_STATE_PASS = 1;
+  // Working, but heading somewhere bad — stock arriving later than expected, a
+  // credential close to expiring. Worth looking at before it becomes a FAIL.
   CHECK_STATE_WARN = 2;
+  // Broken now. The quantities this check covers should not be trusted until it
+  // clears.
   CHECK_STATE_FAIL = 3;
 }
 

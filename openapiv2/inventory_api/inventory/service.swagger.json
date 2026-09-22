@@ -153,6 +153,7 @@
     "/v2/warehouse/status/{warehouseUniqueId}": {
       "get": {
         "summary": "WarehouseStatus returns the integration's own diagnostic checks for one\nwarehouse — the things only it can see, such as expiring credentials, a\nrate limit, or a location it can no longer reach.",
+        "description": "Zentail calls this while serving IntegrationStatus, so answer from state\nyou already hold and return quickly. Report a problem as a failing Check\nrather than as a gRPC error: an error is indistinguishable from the\nintegration being unreachable, and loses whatever the check would have\nsaid. Returning no checks means \"nothing to report\", which reads as\nhealthy.",
         "operationId": "WarehouseService_WarehouseStatus",
         "responses": {
           "200": {
@@ -192,7 +193,8 @@
           "description": "Stable identifier, not prose — an operator or an alert matches on this, so\nit must not change when the wording does. Lower_snake_case by convention."
         },
         "state": {
-          "$ref": "#/definitions/inventory_apiCheckState"
+          "$ref": "#/definitions/inventory_apiCheckState",
+          "description": "How bad this is. FAIL means the stock this check covers is wrong or missing\nright now; WARN means it still works but is degrading, which is where a\nstalling poll loop shows up first."
         },
         "message": {
           "type": "string",
@@ -216,7 +218,7 @@
         "CHECK_SOURCE_INTEGRATION"
       ],
       "default": "CHECK_SOURCE_UNSPECIFIED",
-      "description": " - CHECK_SOURCE_ZENTAIL: Zentail observed this from the outside.\n - CHECK_SOURCE_INTEGRATION: The integration reported this about itself."
+      "description": " - CHECK_SOURCE_UNSPECIFIED: Not set. Zentail fills this in on every check it returns, so this value\nonly appears on a check an integration sent and Zentail has not folded in.\n - CHECK_SOURCE_ZENTAIL: Zentail observed this from the outside.\n - CHECK_SOURCE_INTEGRATION: The integration reported this about itself."
     },
     "inventory_apiCheckState": {
       "type": "string",
@@ -226,7 +228,8 @@
         "CHECK_STATE_WARN",
         "CHECK_STATE_FAIL"
       ],
-      "default": "CHECK_STATE_UNSPECIFIED"
+      "default": "CHECK_STATE_UNSPECIFIED",
+      "description": " - CHECK_STATE_UNSPECIFIED: Zentail never sends this. Treat it as a check you cannot interpret rather\nthan as a pass.\n - CHECK_STATE_PASS: Healthy, nothing to do.\n - CHECK_STATE_WARN: Working, but heading somewhere bad — stock arriving later than expected, a\ncredential close to expiring. Worth looking at before it becomes a FAIL.\n - CHECK_STATE_FAIL: Broken now. The quantities this check covers should not be trusted until it\nclears."
     },
     "inventory_apiIntegrationStatusResponse": {
       "type": "object",
@@ -244,7 +247,8 @@
       "type": "object",
       "properties": {
         "sku": {
-          "type": "string"
+          "type": "string",
+          "description": "Zentail's SKU for the product, and the value to send back on an\nInventoryUpdate. Mapping it to the integration's own product code is the\ncaller's job; a mismatch here is the usual cause of UNKNOWN_SKU."
         },
         "warehouseUniqueId": {
           "type": "string",
@@ -266,10 +270,12 @@
       "type": "object",
       "properties": {
         "sku": {
-          "type": "string"
+          "type": "string",
+          "description": "The Zentail SKU whose quantity this sets, exactly as ListInventory vends\nit — matching is exact, including case. A SKU Zentail's catalog does not\ncarry is rejected with UNKNOWN_SKU and the rest of the batch still applies."
         },
         "warehouseUniqueId": {
-          "type": "string"
+          "type": "string",
+          "description": "Which of the caller's warehouses this quantity is in, named with the\nidentifier ListWarehouses vends. Required: one SKU can be stocked in\nseveral warehouses and an update sets exactly one of them, so omitting it\ndoes not mean \"everywhere\". A warehouse the integration does not own is\nrejected with WAREHOUSE_NOT_YOURS."
         },
         "quantity": {
           "type": "integer",
@@ -286,16 +292,20 @@
       "type": "object",
       "properties": {
         "sku": {
-          "type": "string"
+          "type": "string",
+          "description": "The SKU this result answers for, echoed from the update that produced it."
         },
         "warehouseUniqueId": {
-          "type": "string"
+          "type": "string",
+          "description": "The warehouse this result answers for, echoed from the update. Both halves\nof the key are echoed because a batch may carry the same SKU for two\nwarehouses, so the SKU alone does not say which update a result belongs to."
         },
         "success": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "True when Zentail applied the update. False covers a real rejection and a\ndiscarded out-of-order reading alike, so read `stale` before treating false\nas a fault."
         },
         "errorMessage": {
-          "type": "string"
+          "type": "string",
+          "description": "Human-facing detail for a rejection, for logs and support conversations.\nEmpty on success. Do not branch on it — the wording is not stable; branch\non failure_reason instead."
         },
         "stale": {
           "type": "boolean",
@@ -315,7 +325,8 @@
           "type": "array",
           "items": {
             "$ref": "#/definitions/inventory_apiInventoryItem"
-          }
+          },
+          "description": "One entry per SKU-and-warehouse pair, so a SKU stocked in two of the\ncaller's warehouses appears twice. Empty when the filter matched nothing,\nwhich is not an error."
         },
         "nextCursor": {
           "type": "string",
@@ -397,7 +408,8 @@
           "type": "array",
           "items": {
             "$ref": "#/definitions/inventory_apiCheck"
-          }
+          },
+          "description": "Everything the integration knows about this warehouse's health, one entry\nper condition. Leave `source` and `warehouse_unique_id` unset; Zentail\noverwrites both as it folds these into IntegrationStatus. An empty list\nmeans nothing to report, which Zentail renders as healthy."
         }
       }
     },

@@ -47,7 +47,7 @@
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | name | [string](#string) |  | Stable identifier, not prose — an operator or an alert matches on this, so it must not change when the wording does. Lower_snake_case by convention. |
-| state | [CheckState](#inventory_api-CheckState) |  |  |
+| state | [CheckState](#inventory_api-CheckState) |  | How bad this is. FAIL means the stock this check covers is wrong or missing right now; WARN means it still works but is degrading, which is where a stalling poll loop shows up first. |
 | message | [string](#string) |  | Prose for a human. Say what is wrong and what would fix it. |
 | source | [CheckSource](#inventory_api-CheckSource) |  | Who observed this. Zentail sets it; an integration filling it in on a WarehouseStatus response has it overwritten with INTEGRATION. |
 | warehouse_unique_id | [string](#string) |  | Which warehouse this check is about, when it is about one. Set by Zentail as it folds a WarehouseStatus response in, and on a check reporting that a warehouse could not be reached.
@@ -92,7 +92,7 @@ Without it the fold is lossy: two warehouses returning the same check name are i
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| sku | [string](#string) |  |  |
+| sku | [string](#string) |  | Zentail&#39;s SKU for the product, and the value to send back on an InventoryUpdate. Mapping it to the integration&#39;s own product code is the caller&#39;s job; a mismatch here is the usual cause of UNKNOWN_SKU. |
 | warehouse_unique_id | [string](#string) |  | The caller&#39;s own identifier for the warehouse, not Zentail&#39;s internal id. |
 | quantity | [int32](#int32) |  | What Zentail currently believes is on hand. |
 | last_updated_ts | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | When that belief was last updated, by anyone. |
@@ -110,8 +110,8 @@ Without it the fold is lossy: two warehouses returning the same check name are i
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| sku | [string](#string) |  |  |
-| warehouse_unique_id | [string](#string) |  |  |
+| sku | [string](#string) |  | The Zentail SKU whose quantity this sets, exactly as ListInventory vends it — matching is exact, including case. A SKU Zentail&#39;s catalog does not carry is rejected with UNKNOWN_SKU and the rest of the batch still applies. |
+| warehouse_unique_id | [string](#string) |  | Which of the caller&#39;s warehouses this quantity is in, named with the identifier ListWarehouses vends. Required: one SKU can be stocked in several warehouses and an update sets exactly one of them, so omitting it does not mean &#34;everywhere&#34;. A warehouse the integration does not own is rejected with WAREHOUSE_NOT_YOURS. |
 | quantity | [int32](#int32) |  | Absolute on-hand, not a delta. What is physically there right now, excluding anything already picked for an order. |
 | bin_location | [string](#string) |  | Optional free-text bin or slot, passed through for operator reference. |
 
@@ -129,10 +129,10 @@ is not enough — a batch may carry the same SKU for two warehouses.
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| sku | [string](#string) |  |  |
-| warehouse_unique_id | [string](#string) |  |  |
-| success | [bool](#bool) |  |  |
-| error_message | [string](#string) |  |  |
+| sku | [string](#string) |  | The SKU this result answers for, echoed from the update that produced it. |
+| warehouse_unique_id | [string](#string) |  | The warehouse this result answers for, echoed from the update. Both halves of the key are echoed because a batch may carry the same SKU for two warehouses, so the SKU alone does not say which update a result belongs to. |
+| success | [bool](#bool) |  | True when Zentail applied the update. False covers a real rejection and a discarded out-of-order reading alike, so read `stale` before treating false as a fault. |
+| error_message | [string](#string) |  | Human-facing detail for a rejection, for logs and support conversations. Empty on success. Do not branch on it — the wording is not stable; branch on failure_reason instead. |
 | stale | [bool](#bool) |  | True when the update was discarded because observed_ts predated the value Zentail already held. Not an error: the newer reading stands. Treat as success unless it is happening constantly, which means clock skew or a second writer.
 
 A stale result reports success = false with failure_reason UNSPECIFIED, so check stale before failure_reason or a normal discard reads as a fault. |
@@ -168,7 +168,7 @@ A stale result reports success = false with failure_reason UNSPECIFIED, so check
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| items | [InventoryItem](#inventory_api-InventoryItem) | repeated |  |
+| items | [InventoryItem](#inventory_api-InventoryItem) | repeated | One entry per SKU-and-warehouse pair, so a SKU stocked in two of the caller&#39;s warehouses appears twice. Empty when the filter matched nothing, which is not an error. |
 | next_cursor | [string](#string) |  | Empty when the page is the last one. |
 
 
@@ -271,7 +271,7 @@ A stale result reports success = false with failure_reason UNSPECIFIED, so check
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| checks | [Check](#inventory_api-Check) | repeated |  |
+| checks | [Check](#inventory_api-Check) | repeated | Everything the integration knows about this warehouse&#39;s health, one entry per condition. Leave `source` and `warehouse_unique_id` unset; Zentail overwrites both as it folds these into IntegrationStatus. An empty list means nothing to report, which Zentail renders as healthy. |
 
 
 
@@ -287,7 +287,7 @@ A stale result reports success = false with failure_reason UNSPECIFIED, so check
 
 | Name | Number | Description |
 | ---- | ------ | ----------- |
-| CHECK_SOURCE_UNSPECIFIED | 0 |  |
+| CHECK_SOURCE_UNSPECIFIED | 0 | Not set. Zentail fills this in on every check it returns, so this value only appears on a check an integration sent and Zentail has not folded in. |
 | CHECK_SOURCE_ZENTAIL | 1 | Zentail observed this from the outside. |
 | CHECK_SOURCE_INTEGRATION | 2 | The integration reported this about itself. |
 
@@ -300,10 +300,10 @@ A stale result reports success = false with failure_reason UNSPECIFIED, so check
 
 | Name | Number | Description |
 | ---- | ------ | ----------- |
-| CHECK_STATE_UNSPECIFIED | 0 |  |
-| CHECK_STATE_PASS | 1 |  |
-| CHECK_STATE_WARN | 2 |  |
-| CHECK_STATE_FAIL | 3 |  |
+| CHECK_STATE_UNSPECIFIED | 0 | Zentail never sends this. Treat it as a check you cannot interpret rather than as a pass. |
+| CHECK_STATE_PASS | 1 | Healthy, nothing to do. |
+| CHECK_STATE_WARN | 2 | Working, but heading somewhere bad — stock arriving later than expected, a credential close to expiring. Worth looking at before it becomes a FAIL. |
+| CHECK_STATE_FAIL | 3 | Broken now. The quantities this check covers should not be trusted until it clears. |
 
 
 
@@ -387,7 +387,9 @@ integration that cannot answer &#34;am I healthy&#34; has answered it.
 
 | Method Name | Request Type | Response Type | Description |
 | ----------- | ------------ | ------------- | ------------|
-| WarehouseStatus | [WarehouseStatusRequest](#inventory_api-WarehouseStatusRequest) | [WarehouseStatusResponse](#inventory_api-WarehouseStatusResponse) | WarehouseStatus returns the integration&#39;s own diagnostic checks for one warehouse — the things only it can see, such as expiring credentials, a rate limit, or a location it can no longer reach. |
+| WarehouseStatus | [WarehouseStatusRequest](#inventory_api-WarehouseStatusRequest) | [WarehouseStatusResponse](#inventory_api-WarehouseStatusResponse) | WarehouseStatus returns the integration&#39;s own diagnostic checks for one warehouse — the things only it can see, such as expiring credentials, a rate limit, or a location it can no longer reach.
+
+Zentail calls this while serving IntegrationStatus, so answer from state you already hold and return quickly. Report a problem as a failing Check rather than as a gRPC error: an error is indistinguishable from the integration being unreachable, and loses whatever the check would have said. Returning no checks means &#34;nothing to report&#34;, which reads as healthy. |
 
  
 
