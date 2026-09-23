@@ -1,0 +1,11 @@
+# Entry point. No `zt-ci plan go` gate: its go profile matches Go files and the Makefile
+# only, so a commit touching just src/**/*.proto or openapiv2/ would upload nothing and
+# drift would merge green. The checks are small enough to run on every build (ZEN-5329).
+#
+# This step stays on the go queue's default image. Only the checks in pipeline.ci.yml
+# swap in ci-protobuf.
+steps:
+  - label: ":pipeline: upload"
+    key: upload
+    command: buildkite-agent pipeline upload .buildkite/pipeline.ci.yml
+    agents: { queue: go }
