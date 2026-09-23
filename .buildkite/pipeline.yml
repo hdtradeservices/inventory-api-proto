@@ -9,3 +9,16 @@ steps:
     key: upload
     command: buildkite-agent pipeline upload .buildkite/pipeline.ci.yml
     agents: { queue: go }
+
+  # Start developer-docs' update-pins for this commit (ZEN-5331). depends_on the upload step
+  # waits for every check it uploaded, so a red master build triggers nothing. A proto merge
+  # alone moves no pin -- the docs read each proto at the commit a service's go.mod names --
+  # so these runs usually log "no input changed"; the service triggers carry the pin move.
+  # Async and soft-fail inside the verb, so the docs can never red this build.
+  - label: ":books: docs trigger"
+    key: docs-trigger
+    if: build.branch == pipeline.default_branch
+    depends_on: [upload]
+    command: zt-ci docs-trigger
+    soft_fail: true
+    agents: { queue: go }
