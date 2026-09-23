@@ -7,3 +7,7 @@
 *.out
 go.work
 go.work.sum
+
+# Build-time clones made by `make tools`
+/googleapis/
+/grpc-gateway/
