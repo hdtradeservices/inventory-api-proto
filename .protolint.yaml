@@ -1,0 +1,13 @@
+# Shared by api-proto, inventory-api-proto and shipping-api-proto; keep the three identical.
+# INDENT and MAX_LINE_LENGTH are off because they were nearly all of the 72 default-rule
+# findings across the three repos (2026-09-17) and are style-only (ZEN-5330).
+lint:
+  rules:
+    remove:
+      - INDENT
+      - MAX_LINE_LENGTH
+  rules_option:
+    repeated_field_names_pluralized:
+      # The pluralizer wants "skuses"; "skus" is already plural.
+      uncountable_rules:
+        - skus

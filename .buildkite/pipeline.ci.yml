@@ -4,7 +4,8 @@
 #
 # Every step runs on ci-protobuf, pinned by the tag of the ci commit that built it (the
 # last one to touch images/protobuf), never :latest: the image fixes the protoc version,
-# and a moving protoc is itself a source of drift. No `make lint` yet; that is ZEN-5330.
+# and a moving protoc is itself a source of drift. `make lint` runs protolint under the
+# shared .protolint.yaml.
 steps:
   - group: ":protobuf: checks"
     key: checks
@@ -34,5 +35,11 @@ steps:
       - label: ":test_tube: test"
         key: test
         command: make test
+        agents: { queue: go }
+        plugins: *proto_pod
+
+      - label: ":lint-roller: lint"
+        key: lint
+        command: make lint
         agents: { queue: go }
         plugins: *proto_pod
