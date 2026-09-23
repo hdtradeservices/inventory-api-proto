@@ -1,0 +1,38 @@
+# Drift checks. `make build` regenerates go/, openapiv2/ and docs/ from src/, and
+# check-update fails if that changed anything, so a .proto edit merged without its
+# generated output goes red here.
+#
+# Every step runs on ci-protobuf, pinned by the tag of the ci commit that built it (the
+# last one to touch images/protobuf), never :latest: the image fixes the protoc version,
+# and a moving protoc is itself a source of drift. No `make lint` yet; that is ZEN-5330.
+steps:
+  - group: ":protobuf: checks"
+    key: checks
+    steps:
+      - label: ":gofmt: check-fmt"
+        key: check-fmt
+        command: make check-fmt
+        agents: { queue: go }
+        plugins: &proto_pod
+          - kubernetes:
+              podSpecPatch:
+                containers:
+                  - name: container-0
+                    # podSpecPatch, not podSpec: the controller patches container-0 to the
+                    # queue default first, so a podSpec image would be overwritten.
+                    image: "us.gcr.io/goodkarma-420/ci-protobuf:eccd4edb"
+                    resources:
+                      requests: { cpu: "2", memory: 4Gi }
+                      limits: { memory: 8Gi }
+
+      - label: ":hammer: build + check-update"
+        key: build
+        command: make build && make check-update
+        agents: { queue: go }
+        plugins: *proto_pod
+
+      - label: ":test_tube: test"
+        key: test
+        command: make test
+        agents: { queue: go }
+        plugins: *proto_pod
