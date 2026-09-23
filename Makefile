@@ -5,8 +5,9 @@ DOCS_BUILD_DIR=docs
 
 PROTO_SRC=src
 
-# -e makes every recipe line fail on its first failing command, so a protoc
-# error fails `make build` instead of being swallowed.
+# bash -e stops a recipe line at a failing command, except one in an if
+# condition or before && / ||. protoc is last in its && list, so its exit status
+# still fails `make build`.
 SHELL := /bin/bash
 .SHELLFLAGS := -ec
 
@@ -18,9 +19,10 @@ PROTOC_GEN_DOC_VERSION := v1.5.1
 PROTOLINT_VERSION := v0.34.0
 
 # $(call fetch_pinned,<dir>,<repo url>,<commit sha>): shallow-fetch one commit
-# into <dir>, reusing <dir> when it is already at that commit.
+# into <dir>, reusing <dir> when it is already at that commit with no local edits.
 define fetch_pinned
-	if [ "$$(git -C $(1) rev-parse -q --verify HEAD 2>/dev/null)" != "$(3)" ]; then \
+	if [ "$$(git -C $(1) rev-parse -q --verify HEAD 2>/dev/null)" != "$(3)" ] || \
+		[ -n "$$(git -C $(1) status --porcelain 2>/dev/null)" ]; then \
 		rm -rf $(1); \
 		git init -q $(1); \
 		git -C $(1) fetch -q --depth 1 $(2) $(3); \
@@ -32,7 +34,7 @@ all: build
 
 build: tools clean
 	mkdir -p $(OUTPUT_DIR) $(OPEN_API_V2) $(DOCS_BUILD_DIR)
-	cd $(PROTO_SRC) && \
+	shopt -s globstar && cd $(PROTO_SRC) && \
 		protoc inventory_api/**/*.proto \
 		-I ../googleapis/ \
 		-I ../grpc-gateway/ \
@@ -48,7 +50,6 @@ build: tools clean
 		--grpc-gateway_opt paths=source_relative \
 		--doc_out=:../$(DOCS_BUILD_DIR) \
 		--doc_opt=markdown,full-reference.md
-	rm -rf googleapis grpc-gateway
 
 check-update:
 	@git diff --exit-code
@@ -56,7 +57,7 @@ check-update:
 	@test -z "$(shell git status --porcelain)"
 
 clean:
-	find ${OUTPUT_DIR} -type f -name '*.pb.go' -delete || true
+	find ${OUTPUT_DIR} -type f \( -name '*.pb.go' -o -name '*.pb.gw.go' \) -delete || true
 	rm -rf ${DOCS_BUILD_DIR} || true
 	rm -rf ${OPEN_API_V2} || true
 
@@ -71,23 +72,25 @@ check-fmt:
 		exit 1; \
 	fi
 
-test: tools
+test:
 	go test ./go/...
 
 tools:
 	go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.6.0
 	go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.6.0
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.26.0
-	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.1
+	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.1.0
 	go install github.com/pseudomuto/protoc-gen-doc/cmd/protoc-gen-doc@$(PROTOC_GEN_DOC_VERSION)
-	go install github.com/yoheimuta/protolint/cmd/protolint@$(PROTOLINT_VERSION)
 	$(call fetch_pinned,googleapis,https://github.com/googleapis/googleapis.git,$(GOOGLEAPIS_REF))
 	$(call fetch_pinned,grpc-gateway,https://github.com/grpc-ecosystem/grpc-gateway.git,$(GRPC_GATEWAY_REF))
 
-lint:
+lint-tools:
+	go install github.com/yoheimuta/protolint/cmd/protolint@$(PROTOLINT_VERSION)
+
+lint: lint-tools
 	protolint src
 
-lint-fix:
+lint-fix: lint-tools
 	protolint lint -fix src
 
-.PHONY: all build check-fmt check-update clean format test tools lint lint-fix
+.PHONY: all build check-fmt check-update clean format test tools lint lint-tools lint-fix
