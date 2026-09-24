@@ -11,10 +11,12 @@ PROTO_SRC=src
 SHELL := /bin/bash
 .SHELLFLAGS := -ec
 
-# Pinned inputs. The plugins stay at grpc-gateway v2.6.0, but the options-proto
-# clone is the v2.12.0 tag: the protos set openapiv2 Tag.name, added in v2.12.0.
+# Pinned inputs. The grpc-gateway plugins and the options-proto clone are all
+# v2.27.0, and must move together: v2.27.0 is the first plugin that writes the
+# protos' openapiv2 Tag.name onto each operation (ZEN-5357).
+GRPC_GATEWAY_VERSION := v2.27.0
 GOOGLEAPIS_REF := 5e89775233124f32303f6acad821bf8e90973219
-GRPC_GATEWAY_REF := 1dac1ac6439c7e32714601b945e84f21b23d9cbd
+GRPC_GATEWAY_REF := a8a7bb022f8c59842ecd783c62446daa97c6e150
 PROTOC_GEN_DOC_VERSION := v1.5.1
 PROTOLINT_VERSION := v0.34.0
 
@@ -76,8 +78,8 @@ test:
 	go test ./go/...
 
 tools:
-	go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.6.0
-	go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.6.0
+	go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@$(GRPC_GATEWAY_VERSION)
+	go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@$(GRPC_GATEWAY_VERSION)
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.26.0
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.1.0
 	go install github.com/pseudomuto/protoc-gen-doc/cmd/protoc-gen-doc@$(PROTOC_GEN_DOC_VERSION)
