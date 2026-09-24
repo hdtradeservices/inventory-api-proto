@@ -6,11 +6,11 @@
   },
   "tags": [
     {
-      "name": "InventoryIntegrationService",
+      "name": "Inventory Integration Service",
       "description": "Report on-hand stock for the warehouses you hold, and see what Zentail currently believes."
     },
     {
-      "name": "WarehouseService",
+      "name": "Warehouse Service",
       "description": "Implemented by the integration. Zentail calls this to ask the integration about its own health."
     }
   ],
@@ -66,7 +66,7 @@
           }
         ],
         "tags": [
-          "InventoryIntegrationService"
+          "Inventory Integration Service"
         ]
       },
       "post": {
@@ -98,7 +98,7 @@
           }
         ],
         "tags": [
-          "InventoryIntegrationService"
+          "Inventory Integration Service"
         ]
       }
     },
@@ -122,7 +122,7 @@
           }
         },
         "tags": [
-          "InventoryIntegrationService"
+          "Inventory Integration Service"
         ]
       }
     },
@@ -146,7 +146,7 @@
           }
         },
         "tags": [
-          "InventoryIntegrationService"
+          "Inventory Integration Service"
         ]
       }
     },
@@ -179,7 +179,7 @@
           }
         ],
         "tags": [
-          "WarehouseService"
+          "Warehouse Service"
         ]
       }
     }
@@ -237,6 +237,7 @@
         "checks": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/inventory_apiCheck"
           },
           "description": "Zentail's own observations and the integration's last reported checks, in\none list. Read `source` to tell them apart; render them together, because\nan operator asking \"is this working\" does not care who noticed."
@@ -324,6 +325,7 @@
         "items": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/inventory_apiInventoryItem"
           },
           "description": "One entry per SKU-and-warehouse pair, so a SKU stocked in two of the\ncaller's warehouses appears twice. Empty when the filter matched nothing,\nwhich is not an error."
@@ -340,6 +342,7 @@
         "warehouses": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/inventory_apiWarehouse"
           },
           "description": "Only warehouses the caller can actually name. A warehouse bound to the\nintegration with no identifier set is omitted, because there is no value a\ncaller could send to address it; IntegrationStatus is where that shows up\nas a problem to fix."
@@ -365,6 +368,7 @@
         "updates": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/inventory_apiInventoryUpdate"
           },
           "description": "Server-capped per call. Exceeding the cap fails the request with the limit\nin the error rather than silently truncating."
@@ -382,6 +386,7 @@
         "results": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/inventory_apiInventoryUpdateResult"
           },
           "description": "One entry per update. Order is not guaranteed, which is why each result\nechoes its full key."
@@ -407,6 +412,7 @@
         "checks": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/inventory_apiCheck"
           },
           "description": "Everything the integration knows about this warehouse's health, one entry\nper condition. Leave `source` and `warehouse_unique_id` unset; Zentail\noverwrites both as it folds these into IntegrationStatus. An empty list\nmeans nothing to report, which Zentail renders as healthy."
@@ -435,6 +441,7 @@
         "details": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/protobufAny"
           }
         }
