@@ -21,7 +21,7 @@ steps:
                   - name: container-0
                     # podSpecPatch, not podSpec: the controller patches container-0 to the
                     # queue default first, so a podSpec image would be overwritten.
-                    image: "us.gcr.io/goodkarma-420/ci-protobuf:eccd4edb"
+                    image: "us.gcr.io/goodkarma-420/ci-protobuf:14c4f985"
                     resources:
                       requests: { cpu: "2", memory: 4Gi }
                       limits: { memory: 8Gi }

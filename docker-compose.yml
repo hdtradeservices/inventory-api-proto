@@ -1,7 +1,7 @@
 version: "3"
 services:
   proto:
-    image: us.gcr.io/goodkarma-420/ci:go-protobuf
+    image: us.gcr.io/goodkarma-420/ci-protobuf:14c4f985
     user: "${UID:-1000}:${GID:-1000}"
     environment:
       - HOME=/tmp
